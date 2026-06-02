@@ -9,9 +9,8 @@ exec gunicorn app.main:app \
   --bind 0.0.0.0:8000 \
   --worker-tmp-dir /dev/shm \
   --timeout 120 \
-  --keepalive 5 \
+  --keep-alive 5 \
   --access-logfile - \
   --error-logfile - \
   --log-level info \
-  --proxy-headers \
   --forwarded-allow-ips "*"
