@@ -30,20 +30,10 @@ resource "aws_db_parameter_group" "main" {
   name_prefix = "${var.name}-pg16-"
   family      = "postgres16"
 
-  # Tuned for high-concurrency workloads with PgBouncer connection pooling
   parameter {
     name         = "max_connections"
     value        = "500"
     apply_method = "pending-reboot"
-  }
-  parameter {
-    name         = "shared_buffers"
-    value        = "{DBInstanceClassMemory/4}"
-    apply_method = "pending-reboot"
-  }
-  parameter {
-    name  = "effective_cache_size"
-    value = "{DBInstanceClassMemory*3/4}"
   }
   parameter {
     name  = "work_mem"

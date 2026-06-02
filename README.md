@@ -105,12 +105,4 @@ python -m app.db.seed
 * Dockerized services
 * Reverse proxy routing
 * CI pipelines
-
-```
-
-Why this matters:
-
-Good documentation reduces onboarding time and makes your project look professional.
-
-Stop here. Copy this and say **next**.
 ```

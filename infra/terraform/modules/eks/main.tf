@@ -241,6 +241,14 @@ resource "helm_release" "aws_lb_controller" {
     value = var.cluster_name
   }
   set {
+    name  = "region"
+    value = var.aws_region
+  }
+  set {
+    name  = "vpcId"
+    value = var.vpc_id
+  }
+  set {
     name  = "replicaCount"
     value = "2"
   }
