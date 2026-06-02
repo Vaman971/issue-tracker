@@ -250,6 +250,7 @@ jobs:
           kubectl apply -f infra/kubernetes/namespace.yaml
           kubectl apply -f infra/kubernetes/configmap.yaml
           kubectl apply -f infra/kubernetes/secrets/external-secrets.yaml
+          kubectl apply -f infra/kubernetes/backend/serviceaccount.yaml
           kubectl apply -f infra/kubernetes/nginx/configmap.yaml
           kubectl apply -f infra/kubernetes/nginx/deployment.yaml
           kubectl apply -f infra/kubernetes/nginx/service.yaml
