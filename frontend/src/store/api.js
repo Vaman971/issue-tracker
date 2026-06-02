@@ -17,11 +17,11 @@ const getStoredAccessToken = () => {
 
 const rawBaseQuery = fetchBaseQuery({
     baseUrl: API_BASE_URL,
-    
+
     prepareHeaders: (headers) => {
         const accessToken = getStoredAccessToken();
 
-        if(accessToken){
+        if (accessToken) {
             headers.set("Authorization", `Bearer ${accessToken}`);
         }
 
@@ -29,14 +29,13 @@ const rawBaseQuery = fetchBaseQuery({
     },
 });
 
-// every api will go through a check for authentication token, if the token has expired, we use the refresh token to regrenerate both accessToken and refreshToken from bakend api
 const baseQueryWithRefresh = async (args, api, extraOptions) => {
     let result = await rawBaseQuery(args, api, extraOptions);
 
-    if (result.error && result.error.status === 401){
+    if (result.error && result.error.status === 401) {
         const refreshToken = localStorage.getItem("refreshToken");
 
-        if(!refreshToken) {
+        if (!refreshToken) {
             api.dispatch(logout());
             return result;
         }
@@ -45,15 +44,13 @@ const baseQueryWithRefresh = async (args, api, extraOptions) => {
             {
                 url: "/auth/refresh",
                 method: "POST",
-                body: {
-                    refresh_token: refreshToken
-                },
+                body: { refresh_token: refreshToken },
             },
             api,
             extraOptions
         );
 
-        if (refreshResult.data){
+        if (refreshResult.data) {
             api.dispatch(
                 setCredentials({
                     accessToken: refreshResult.data.access_token,
@@ -63,7 +60,6 @@ const baseQueryWithRefresh = async (args, api, extraOptions) => {
 
             result = await rawBaseQuery(args, api, extraOptions);
         } else {
-            // refresh token has also expired, trigger logout
             api.dispatch(logout());
         }
     }
@@ -74,6 +70,17 @@ const baseQueryWithRefresh = async (args, api, extraOptions) => {
 export const api = createApi({
     reducerPath: "api",
     baseQuery: baseQueryWithRefresh,
-    tagTypes: ["Project", "Issue", "User"],
+    tagTypes: [
+        "Project",
+        "Issue",
+        "User",
+        "Comment",
+        "Attachment",
+        "Label",
+        "Notification",
+        "Activity",
+        "Stats",
+        "Member",
+    ],
     endpoints: () => ({}),
 });

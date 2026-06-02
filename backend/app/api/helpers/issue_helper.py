@@ -1,6 +1,7 @@
 from fastapi import HTTPException, status
-from sqlalchemy import select
+from sqlalchemy import func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import selectinload
 from collections.abc import Sequence
 
 from app.models.issue import Issue
@@ -13,7 +14,9 @@ async def get_project_or_404(
     db: AsyncSession,
 ) -> Project:
     project_result = await db.execute(
-        select(Project).where(Project.id == project_id)
+        select(Project)
+        .where(Project.id == project_id)
+        .options(selectinload(Project.leader))
     )
 
     project = project_result.scalar_one_or_none()
@@ -31,7 +34,13 @@ async def get_issue_or_404(
     db: AsyncSession,
 ) -> Issue:
     issue_result = await db.execute(
-        select(Issue).where(Issue.id == issue_id)
+        select(Issue)
+        .where(Issue.id == issue_id)
+        .options(
+            selectinload(Issue.labels),
+            selectinload(Issue.assignees),
+            selectinload(Issue.creator),
+        )
     )
 
     issue = issue_result.scalar_one_or_none()
@@ -64,36 +73,41 @@ async def list_visible_issues(
     db: AsyncSession,
     skip: int,
     limit: int,
+    q: str | None = None,
 ) -> Sequence[Issue]:
-    if current_user.role == UserRole.ADMIN:
-        result = await db.execute(
-            select(Issue)
-            .order_by(Issue.id)
-            .offset(skip)
-            .limit(limit)
-        )
-        return result.scalars().all()
+    _eager = [
+        selectinload(Issue.labels),
+        selectinload(Issue.assignees),
+        selectinload(Issue.creator),
+    ]
 
-    if current_user.role == UserRole.PROJECT_LEADER:
-        result = await db.execute(
+    if current_user.role == UserRole.ADMIN:
+        stmt = select(Issue).options(*_eager)
+    elif current_user.role == UserRole.PROJECT_LEADER:
+        stmt = (
             select(Issue)
             .join(Project, Issue.project_id == Project.id)
             .where(Project.leader_id == current_user.id)
-            .order_by(Issue.id)
-            .offset(skip)
-            .limit(limit)
+            .options(*_eager)
         )
-        return result.scalars().all()
+    else:
+        stmt = (
+            select(Issue)
+            .join(ProjectMember, Issue.project_id == ProjectMember.project_id)
+            .where(ProjectMember.user_id == current_user.id)
+            .options(*_eager)
+        )
 
-    result = await db.execute(
-        select(Issue)
-        .join(ProjectMember, Issue.project_id == ProjectMember.project_id)
-        .where(ProjectMember.user_id == current_user.id)
-        .order_by(Issue.id)
-        .offset(skip)
-        .limit(limit)
-    )
+    if q:
+        term = f"%{q.lower()}%"
+        stmt = stmt.where(
+            or_(
+                func.lower(Issue.title).like(term),
+                func.lower(Issue.description).like(term),
+            )
+        )
 
+    result = await db.execute(stmt.order_by(Issue.id).offset(skip).limit(limit))
     return result.scalars().all()
 
 async def ensure_can_create_issue_in_project(
@@ -168,53 +182,55 @@ def ensure_status_only_update(update_data: dict) -> None:
         )
 
 
-async def validate_issue_assignee(
-    assignee_id: int | None,
+async def validate_issue_assignees(
+    assignee_ids: list[int],
     project: Project,
     db: AsyncSession,
 ) -> None:
-    if assignee_id is None:
-        return
+    for assignee_id in assignee_ids:
+        await _validate_single_assignee(assignee_id, project, db)
 
-    user_result = await db.execute(
-        select(User).where(User.id == assignee_id)
-    )
 
+async def _validate_single_assignee(
+    assignee_id: int,
+    project: Project,
+    db: AsyncSession,
+) -> None:
+    user_result = await db.execute(select(User).where(User.id == assignee_id))
     assignee = user_result.scalar_one_or_none()
 
     if assignee is None:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
-            detail="Assignee not found"
+            detail=f"Assignee {assignee_id} not found"
         )
 
-    # Admin has all the rights
-    if (
-        assignee.role == UserRole.ADMIN
-    ):
-        return
-
-    # the project's project leader can make changes
-    if (
-        assignee.role == UserRole.PROJECT_LEADER
-        and project.leader_id == assignee.id
-    ):
-        return
-
-    if assignee.role not in {UserRole.DEVELOPER, UserRole.QA}:
+    if not assignee.is_active:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Assignee must be a developer, qa, or the project leader"
+            detail=f"Assignee {assignee_id} is not active"
         )
 
-    is_member = await is_project_member(
-        project_id=project.id,
-        user_id=assignee.id,
-        db=db,
+    # Admins can always be assigned
+    if assignee.role == UserRole.ADMIN:
+        return
+
+    # The project's own leader is always valid
+    if project.leader_id == assignee.id:
+        return
+
+    # Any active project member (any role, including viewer) is valid
+    if await is_project_member(project_id=project.id, user_id=assignee.id, db=db):
+        return
+
+    # Project leaders of OTHER projects can be cross-assigned
+    if assignee.role == UserRole.PROJECT_LEADER:
+        return
+
+    raise HTTPException(
+        status_code=status.HTTP_400_BAD_REQUEST,
+        detail=(
+            f"User {assignee_id} cannot be assigned: must be a project member, "
+            "admin, or project leader"
+        )
     )
-
-    if not is_member:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Assignee must be a member of this project"
-        )

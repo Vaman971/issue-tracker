@@ -1,0 +1,48 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: celery-worker
+  namespace: issue-tracker
+  labels:
+    app: celery-worker
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: celery-worker
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 1
+      maxUnavailable: 1
+  template:
+    metadata:
+      labels:
+        app: celery-worker
+    spec:
+      serviceAccountName: backend
+      terminationGracePeriodSeconds: 120
+      containers:
+        - name: celery-worker
+          image: REGISTRY/issue-tracker-backend:latest
+          imagePullPolicy: Always
+          command: ["celery", "-A", "app.worker.celery_app", "worker",
+                    "--loglevel=info", "--concurrency=4", "-Q", "default,email,notifications"]
+          envFrom:
+            - configMapRef:
+                name: app-config
+            - secretRef:
+                name: app-secrets
+          resources:
+            requests:
+              cpu: "300m"
+              memory: "512Mi"
+            limits:
+              cpu: "2000m"
+              memory: "2Gi"
+          livenessProbe:
+            exec:
+              command: ["celery", "-A", "app.worker.celery_app", "inspect", "ping", "-t", "5"]
+            initialDelaySeconds: 30
+            periodSeconds: 60
+            failureThreshold: 3

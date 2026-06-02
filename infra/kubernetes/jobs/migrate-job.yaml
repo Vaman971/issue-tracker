@@ -1,0 +1,35 @@
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: db-migrate
+  namespace: issue-tracker
+  labels:
+    app: db-migrate
+spec:
+  backoffLimit: 2
+  ttlSecondsAfterFinished: 300
+  template:
+    metadata:
+      labels:
+        app: db-migrate
+    spec:
+      serviceAccountName: backend
+      restartPolicy: Never
+      containers:
+        - name: migrate
+          # MIGRATE_IMAGE is substituted by the deploy pipeline via envsubst
+          image: ${MIGRATE_IMAGE}
+          imagePullPolicy: Always
+          command: ["sh", "/app/scripts/migrate.sh"]
+          envFrom:
+            - configMapRef:
+                name: app-config
+            - secretRef:
+                name: app-secrets
+          resources:
+            requests:
+              cpu: "200m"
+              memory: "256Mi"
+            limits:
+              cpu: "500m"
+              memory: "512Mi"

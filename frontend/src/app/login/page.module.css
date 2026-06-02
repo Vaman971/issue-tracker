@@ -80,6 +80,12 @@
   cursor: not-allowed;
 }
 
+.forgotRow {
+  text-align: right;
+  margin-bottom: 16px;
+  margin-top: -6px;
+}
+
 .footerText {
   margin-top: 18px;
   font-size: 14px;

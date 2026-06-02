@@ -5,10 +5,16 @@
 }
 
 .header {
+    margin-bottom: 8px;
+}
+
+.toolbar {
     display: flex;
     align-items: center;
     justify-content: space-between;
-    margin-bottom: 32px;
+    gap: 12px;
+    margin-bottom: 28px;
+    flex-wrap: wrap;
 }
 
 .createButton {
@@ -77,6 +83,95 @@
     font-size: 14px;
 }
 
+.cardLink {
+    display: block;
+    text-decoration: none;
+}
+
+.cardLink:hover .card {
+    border-color: #bfdbfe;
+    box-shadow: 0 14px 32px rgba(37, 99, 235, 0.12);
+    transform: translateY(-2px);
+    transition: all 0.15s ease;
+}
+
+.card {
+    transition: all 0.15s ease;
+}
+
+.cardFooter {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-top: 12px;
+}
+
+.viewLink {
+    font-size: 13px;
+    font-weight: 700;
+    color: #2563eb;
+}
+
 .empty {
     color: #6b7280;
+}
+
+.searchBar {
+    margin-bottom: 24px;
+}
+
+.pagination {
+    display: flex;
+    align-items: center;
+    gap: 16px;
+    margin-top: 36px;
+}
+
+.pageBtn {
+    padding: 8px 18px;
+    border: none;
+    border-radius: 10px;
+    background: #2563eb;
+    color: white;
+    font-weight: 700;
+    font-size: 14px;
+    cursor: pointer;
+    transition: background 0.15s;
+}
+
+.pageBtn:hover:not(:disabled) {
+    background: #1d4ed8;
+}
+
+.pageBtn:disabled {
+    opacity: 0.45;
+    cursor: not-allowed;
+}
+
+.pageLabel {
+    color: #6b7280;
+    font-size: 14px;
+    font-weight: 600;
+}
+
+.searchInput {
+    width: 100%;
+    max-width: 380px;
+    padding: 10px 16px;
+    border: 1.5px solid #e5e7eb;
+    border-radius: 10px;
+    font-size: 14px;
+    background: white;
+    color: #111827;
+    transition: border-color 0.15s, box-shadow 0.15s;
+}
+
+.searchInput:focus {
+    outline: none;
+    border-color: #2563eb;
+    box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.1);
+}
+
+.searchInput::placeholder {
+    color: #9ca3af;
 }

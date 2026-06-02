@@ -1,0 +1,40 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: celery-beat
+  namespace: issue-tracker
+  labels:
+    app: celery-beat
+spec:
+  # Always exactly one beat scheduler; multiple instances would duplicate tasks
+  replicas: 1
+  selector:
+    matchLabels:
+      app: celery-beat
+  strategy:
+    type: Recreate
+  template:
+    metadata:
+      labels:
+        app: celery-beat
+    spec:
+      serviceAccountName: backend
+      terminationGracePeriodSeconds: 30
+      containers:
+        - name: celery-beat
+          image: REGISTRY/issue-tracker-backend:latest
+          imagePullPolicy: Always
+          command: ["celery", "-A", "app.worker.celery_app", "beat",
+                    "--loglevel=info", "--scheduler", "celery.beat:PersistentScheduler"]
+          envFrom:
+            - configMapRef:
+                name: app-config
+            - secretRef:
+                name: app-secrets
+          resources:
+            requests:
+              cpu: "100m"
+              memory: "128Mi"
+            limits:
+              cpu: "500m"
+              memory: "256Mi"

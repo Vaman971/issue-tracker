@@ -1,0 +1,43 @@
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: issue-tracker
+  namespace: issue-tracker
+  annotations:
+    # AWS ALB Ingress Controller
+    kubernetes.io/ingress.class: alb
+    alb.ingress.kubernetes.io/scheme: internet-facing
+    alb.ingress.kubernetes.io/target-type: ip
+
+    # TLS — replace with your ACM certificate ARN
+    alb.ingress.kubernetes.io/certificate-arn: "ACM_CERTIFICATE_ARN"
+    alb.ingress.kubernetes.io/listen-ports: '[{"HTTP":80},{"HTTPS":443}]'
+    alb.ingress.kubernetes.io/ssl-redirect: "443"
+
+    # Health check hits the nginx pod which in turn proxies to backend/frontend
+    alb.ingress.kubernetes.io/healthcheck-path: /
+    alb.ingress.kubernetes.io/healthcheck-interval-seconds: "15"
+    alb.ingress.kubernetes.io/healthy-threshold-count: "2"
+    alb.ingress.kubernetes.io/unhealthy-threshold-count: "3"
+    alb.ingress.kubernetes.io/success-codes: "200-399"
+
+    # Performance & connection settings for high throughput
+    alb.ingress.kubernetes.io/load-balancing-algorithm-type: round_robin
+    alb.ingress.kubernetes.io/connection-idle-timeout: "60"
+    alb.ingress.kubernetes.io/target-group-attributes: >-
+      deregistration_delay.timeout_seconds=30,
+      slow_start.duration_seconds=30
+
+    # Access logs to S3 (optional — replace bucket name)
+    # alb.ingress.kubernetes.io/load-balancer-attributes: access_logs.s3.enabled=true,access_logs.s3.bucket=my-alb-logs
+spec:
+  rules:
+    - http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: nginx
+                port:
+                  number: 80

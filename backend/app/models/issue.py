@@ -59,12 +59,8 @@ class Issue(Base):
         nullable=False
     )
 
-    assignee_id: Mapped[int] = mapped_column(
-        ForeignKey("users.id"),
-        nullable=True
-    )
-
     # its a good practie to keep the forein_keys variable assigned, as if a table points to the same table twice with differenct foreign keys, then sqlalchemy will get confused
     project = relationship("Project", foreign_keys=[project_id])
     creator = relationship("User", foreign_keys=[creator_id])
-    assignee = relationship("User", foreign_keys=[assignee_id])
+    labels = relationship("Label", secondary="issue_labels", viewonly=True)
+    assignees = relationship("User", secondary="issue_assignees", viewonly=True)

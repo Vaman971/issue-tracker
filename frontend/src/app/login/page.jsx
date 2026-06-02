@@ -78,6 +78,12 @@ export default function LoginPage() {
                 <p className={styles.error}>Login failed. Check your credentials.</p>
             )}
 
+            <div className={styles.forgotRow}>
+                <Link className={styles.link} href="/forgot-password">
+                    Forgot password?
+                </Link>
+            </div>
+
             <button
                 className={styles.button}
                 type="submit"

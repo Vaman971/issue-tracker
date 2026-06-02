@@ -20,13 +20,58 @@ export const authApi = api.injectEndpoints({
 
         getMe: builder.query({
             query: () => "/auth/me",
-        })
+            providesTags: ["User"],
+        }),
+
+        forgotPassword: builder.mutation({
+            query: (body) => ({
+                url: "/auth/forgot-password",
+                method: "POST",
+                body,
+            }),
+        }),
+
+        resetPassword: builder.mutation({
+            query: (body) => ({
+                url: "/auth/reset-password",
+                method: "POST",
+                body,
+            }),
+        }),
+
+        verifyEmail: builder.mutation({
+            query: (body) => ({
+                url: "/auth/verify-email",
+                method: "POST",
+                body,
+            }),
+            invalidatesTags: ["User"],
+        }),
+
+        resendVerification: builder.mutation({
+            query: () => ({
+                url: "/auth/resend-verification",
+                method: "POST",
+            }),
+        }),
+
+        changePassword: builder.mutation({
+            query: (body) => ({
+                url: "/auth/change-password",
+                method: "POST",
+                body,
+            }),
+        }),
     }),
 });
 
-// redux RTK, now auto-generates the react hooks
 export const {
     useLoginMutation,
     useRegisterMutation,
     useGetMeQuery,
+    useForgotPasswordMutation,
+    useResetPasswordMutation,
+    useVerifyEmailMutation,
+    useResendVerificationMutation,
+    useChangePasswordMutation,
 } = authApi;

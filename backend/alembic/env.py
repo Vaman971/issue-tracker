@@ -20,6 +20,10 @@ config = context.config
 if config.config_file_name is not None:
     fileConfig(config.config_file_name)
 
+# Override the URL in alembic.ini with the value from the application config so
+# the same source of truth (DATABASE_URL env var) is used everywhere.
+config.set_main_option("sqlalchemy.url", settings.DATABASE_URL)
+
 # add your model's MetaData object here
 # for 'autogenerate' support
 # from myapp import mymodel

@@ -1,16 +1,43 @@
+# Web framework & server
 fastapi
 uvicorn[standard]
+gunicorn
+
+# Database
 sqlalchemy
 asyncpg
 aiosqlite
 alembic
+
+# Settings & validation
 pydantic-settings
 pydantic[email]
+
+# Auth & security
 python-jose[cryptography]
 passlib[bcrypt]
 bcrypt<5
+
+# Redis
 redis
+
+# File handling
 python-multipart
+pillow
+aiofiles
+
+# Email
+aiosmtplib
+
+# Celery (background tasks)
+celery[redis]
+flower
+
+# AWS S3 (file storage)
+boto3
+botocore
+
+# HTTP client & testing
 pytest
 pytest-cov
 pytest-asyncio

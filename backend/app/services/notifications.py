@@ -1,16 +1,25 @@
+import json
 import logging
+from sqlalchemy.ext.asyncio import AsyncSession
+
+from app.models.notification import Notification, NotificationType
 
 logger = logging.getLogger(__name__)
 
-# later this could become emial sending, redis queue, celery worker, slack notification etc
-def send_issue_created_notification(
-        issue_id: int,
-        issue_title: str,
-        creator_email: str
+
+async def notify(
+    db: AsyncSession,
+    user_id: int,
+    type: NotificationType,
+    title: str,
+    message: str,
+    meta: dict | None = None,
 ) -> None:
-    logger.info(
-        "Issue created notification queued | issue_id=%s | ttile=%s | creator=%s",
-        issue_id,
-        issue_title,
-        creator_email
-    )
+    """Add a Notification row to the current session. Caller is responsible for commit."""
+    db.add(Notification(
+        user_id=user_id,
+        type=type,
+        title=title,
+        message=message,
+        meta=json.dumps(meta) if meta else None,
+    ))

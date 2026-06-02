@@ -1,46 +1,11 @@
+# Production compose — nginx on :80, no exposed ports except nginx and postgres tools.
+#
+# Usage:
+#   docker compose up -d --build
+#
+# Hit:  http://localhost  (nginx proxies / → frontend, /api/ → backend)
+
 services:
-  migrate:
-    build:
-      context: ./backend
-    container_name: issue_tracker_migrate
-    env_file:
-      - ./backend/.env
-    depends_on:
-      postgres:
-        condition: service_healthy
-      redis:
-        condition: service_started
-    command: ["sh", "scripts/migrate.sh"]
-    restart: "no"
-
-  backend:
-    build:
-      context: ./backend
-    container_name: issue_tracker_backend
-    restart: always
-    env_file:
-      - ./backend/.env
-    expose:
-      - "8000"
-    depends_on:
-      postgres:
-        condition: service_healthy
-      redis:
-        condition: service_started
-      migrate:
-        condition: service_completed_successfully
-
-  frontend:
-    build:
-      context: ./frontend
-    container_name: issue_tracker_frontend
-    restart: always
-    environment:
-      NEXT_PUBLIC_API_BASE_URL: http://backend:8000
-    expose:
-      - "3000"
-    depends_on:
-      - backend
 
   postgres:
     image: postgres:16
@@ -67,6 +32,104 @@ services:
     expose:
       - "6379"
 
+  migrate:
+    build:
+      context: ./backend
+    container_name: issue_tracker_migrate
+    env_file:
+      - ./backend/.env
+    environment:
+      # Override localhost URLs from .env with docker-internal service names
+      DATABASE_URL: postgresql+asyncpg://issue_user:issue_password@postgres:5432/issue_tracker
+      REDIS_URL: redis://redis:6379/0
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_started
+    command: ["sh", "scripts/migrate.sh"]
+    restart: "no"
+
+  backend:
+    build:
+      context: ./backend
+    container_name: issue_tracker_backend
+    restart: always
+    env_file:
+      - ./backend/.env
+    environment:
+      # Override localhost URLs from .env with docker-internal service names
+      DATABASE_URL: postgresql+asyncpg://issue_user:issue_password@postgres:5432/issue_tracker
+      REDIS_URL: redis://redis:6379/0
+      CELERY_BROKER_URL: redis://redis:6379/1
+      CELERY_RESULT_BACKEND: redis://redis:6379/2
+      BACKEND_CORS_ORIGINS: "http://localhost,http://127.0.0.1"
+    expose:
+      - "8000"
+    volumes:
+      - uploads_data:/app/uploads
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_started
+      migrate:
+        condition: service_completed_successfully
+
+  celery-worker:
+    build:
+      context: ./backend
+    container_name: issue_tracker_celery_worker
+    restart: always
+    command: celery -A app.worker.celery_app worker --loglevel=info --concurrency=2
+    env_file:
+      - ./backend/.env
+    environment:
+      DATABASE_URL: postgresql+asyncpg://issue_user:issue_password@postgres:5432/issue_tracker
+      REDIS_URL: redis://redis:6379/0
+      CELERY_BROKER_URL: redis://redis:6379/1
+      CELERY_RESULT_BACKEND: redis://redis:6379/2
+    volumes:
+      - uploads_data:/app/uploads
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_started
+      migrate:
+        condition: service_completed_successfully
+
+  celery-beat:
+    build:
+      context: ./backend
+    container_name: issue_tracker_celery_beat
+    restart: always
+    command: celery -A app.worker.celery_app beat --loglevel=info
+    env_file:
+      - ./backend/.env
+    environment:
+      DATABASE_URL: postgresql+asyncpg://issue_user:issue_password@postgres:5432/issue_tracker
+      REDIS_URL: redis://redis:6379/0
+      CELERY_BROKER_URL: redis://redis:6379/1
+      CELERY_RESULT_BACKEND: redis://redis:6379/2
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_started
+      migrate:
+        condition: service_completed_successfully
+
+  frontend:
+    build:
+      context: ./frontend
+    container_name: issue_tracker_frontend
+    restart: always
+    expose:
+      - "3000"
+    depends_on:
+      - backend
+
   nginx:
     image: nginx:1.27-alpine
     container_name: issue_tracker_nginx
@@ -81,3 +144,4 @@ services:
 
 volumes:
   postgres_data:
+  uploads_data:

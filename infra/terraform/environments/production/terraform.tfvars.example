@@ -1,0 +1,29 @@
+aws_region         = "ap-south-1"
+environment        = "production"
+vpc_cidr           = "10.0.0.0/16"
+kubernetes_version = "1.30"
+
+# EKS nodes — c6i.xlarge gives 4 vCPU / 8 GB per node
+node_instance_type = "c6i.xlarge"
+node_min_size      = 3
+node_max_size      = 15
+node_desired_size  = 3
+
+# RDS — r6g.large is sufficient with PgBouncer connection pooling
+db_instance_class = "db.r6g.large"
+db_name           = "issuetracker"
+db_username       = "issueadmin"
+
+# ElastiCache Redis cluster (3 shards × 2 replicas = 6 nodes)
+redis_node_type  = "cache.r6g.large"
+redis_num_shards = 3
+
+# GitHub OIDC
+github_org  = "YOUR_GITHUB_USERNAME_OR_ORG"
+github_repo = "issue-tracker"
+
+# S3 bucket for file uploads (must already exist or be created separately)
+s3_uploads_bucket = "issue-tracker-uploads-prod"
+
+# ACM certificate for your domain (must already be issued in ap-south-1)
+acm_certificate_arn = "arn:aws:acm:ap-south-1:ACCOUNT_ID:certificate/CERT_ID"

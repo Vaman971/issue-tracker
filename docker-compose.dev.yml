@@ -1,27 +1,199 @@
+# Development compose — fully standalone, hot-reload enabled, dev tools included.
+#
+# Usage:
+#   docker compose -f docker-compose.dev.yml up -d --build
+#
+# Service ports available on your host:
+#   Frontend (hot-reload):  http://localhost:3000
+#   Backend (hot-reload):   http://localhost:8000
+#   pgAdmin:                http://localhost:5050  (admin@issue.com / admin)
+#   Flower (Celery UI):     http://localhost:5555
+#   Redis Commander:        http://localhost:8081
+#   PostgreSQL (direct):    localhost:5431
+#   Redis (direct):         localhost:6379
+
 services:
+
+  postgres:
+    image: postgres:16
+    container_name: issue_tracker_postgres_dev
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: issue_user
+      POSTGRES_PASSWORD: issue_password
+      POSTGRES_DB: issue_tracker
+    ports:
+      - "5431:5432"
+    volumes:
+      - postgres_dev_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U issue_user -d issue_tracker"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  redis:
+    image: redis:7
+    container_name: issue_tracker_redis_dev
+    restart: unless-stopped
+    ports:
+      - "6379:6379"
+
+  migrate:
+    build:
+      context: ./backend
+    container_name: issue_tracker_migrate_dev
+    environment:
+      DATABASE_URL: postgresql+asyncpg://issue_user:issue_password@postgres:5432/issue_tracker
+      REDIS_URL: redis://redis:6379/0
+      JWT_SECRET_KEY: dev-secret-key-change-in-production
+      JWT_REFRESH_SECRET_KEY: dev-refresh-secret-key-change-in-production
+    depends_on:
+      postgres:
+        condition: service_healthy
+    command: ["sh", "scripts/migrate.sh"]
+    restart: "no"
+
   backend:
+    build:
+      context: ./backend
+    container_name: issue_tracker_backend_dev
+    command: uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
     ports:
       - "8000:8000"
     volumes:
       - ./backend:/app
+      - uploads_dev:/app/uploads
+    environment:
+      APP_ENV: development
+      DATABASE_URL: postgresql+asyncpg://issue_user:issue_password@postgres:5432/issue_tracker
+      REDIS_URL: redis://redis:6379/0
+      JWT_SECRET_KEY: dev-secret-key-change-in-production
+      JWT_REFRESH_SECRET_KEY: dev-refresh-secret-key-change-in-production
+      JWT_ALGORITHM: HS256
+      ACCESS_TOKEN_EXPIRES_MINUTES: "15"
+      REFRESH_TOKEN_EXPIRES_DAYS: "7"
+      BACKEND_CORS_ORIGINS: "http://localhost:3000,http://127.0.0.1:3000"
+      FRONTEND_URL: http://localhost:3000
+      SEED_ADMIN_EMAIL: admin@example.com
+      SEED_ADMIN_PASSWORD: admin12345
+      STORAGE_BACKEND: local
+      LOCAL_UPLOAD_DIR: uploads
+      MAX_UPLOAD_SIZE_MB: "10"
+      EMAILS_ENABLED: "false"
+      SMTP_FROM_EMAIL: noreply@issuetracker.local
+      CELERY_BROKER_URL: redis://redis:6379/1
+      CELERY_RESULT_BACKEND: redis://redis:6379/2
+      SQL_ECHO: "false"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_started
+      migrate:
+        condition: service_completed_successfully
+    restart: unless-stopped
+
+  celery-worker:
+    build:
+      context: ./backend
+    container_name: issue_tracker_celery_worker_dev
+    command: celery -A app.worker.celery_app worker --loglevel=info --concurrency=2
+    volumes:
+      - ./backend:/app
+      - uploads_dev:/app/uploads
+    environment:
+      DATABASE_URL: postgresql+asyncpg://issue_user:issue_password@postgres:5432/issue_tracker
+      REDIS_URL: redis://redis:6379/0
+      JWT_SECRET_KEY: dev-secret-key-change-in-production
+      JWT_REFRESH_SECRET_KEY: dev-refresh-secret-key-change-in-production
+      STORAGE_BACKEND: local
+      LOCAL_UPLOAD_DIR: uploads
+      EMAILS_ENABLED: "false"
+      SMTP_FROM_EMAIL: noreply@issuetracker.local
+      CELERY_BROKER_URL: redis://redis:6379/1
+      CELERY_RESULT_BACKEND: redis://redis:6379/2
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_started
+    restart: unless-stopped
+
+  celery-beat:
+    build:
+      context: ./backend
+    container_name: issue_tracker_celery_beat_dev
+    command: celery -A app.worker.celery_app beat --loglevel=info
+    volumes:
+      - ./backend:/app
+    environment:
+      DATABASE_URL: postgresql+asyncpg://issue_user:issue_password@postgres:5432/issue_tracker
+      REDIS_URL: redis://redis:6379/0
+      JWT_SECRET_KEY: dev-secret-key-change-in-production
+      JWT_REFRESH_SECRET_KEY: dev-refresh-secret-key-change-in-production
+      CELERY_BROKER_URL: redis://redis:6379/1
+      CELERY_RESULT_BACKEND: redis://redis:6379/2
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_started
+    restart: unless-stopped
+
+  flower:
+    build:
+      context: ./backend
+    container_name: issue_tracker_flower_dev
+    command: celery -A app.worker.celery_app flower --port=5555
+    ports:
+      - "5555:5555"
+    environment:
+      DATABASE_URL: postgresql+asyncpg://issue_user:issue_password@postgres:5432/issue_tracker
+      REDIS_URL: redis://redis:6379/0
+      JWT_SECRET_KEY: dev-secret-key-change-in-production
+      JWT_REFRESH_SECRET_KEY: dev-refresh-secret-key-change-in-production
+      CELERY_BROKER_URL: redis://redis:6379/1
+      CELERY_RESULT_BACKEND: redis://redis:6379/2
+    depends_on:
+      - redis
+    restart: unless-stopped
 
   frontend:
-    ports:
-      - "3000:3000"
-    environment:
-      NEXT_PUBLIC_API_BASE_URL: http://backend:8000
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile.dev
+    container_name: issue_tracker_frontend_dev
+    expose:
+      - "3000"
     volumes:
       - ./frontend:/app
       - /app/node_modules
+      - /app/.next
+    environment:
+      # Nginx handles /api/ → backend, so this rewrite target is only a fallback.
+      BACKEND_INTERNAL_URL: http://backend:8000
+      NEXT_PUBLIC_API_BASE_URL: http://backend:8000
+    depends_on:
+      - backend
+    restart: unless-stopped
 
-  redis:
+  nginx:
+    image: nginx:1.27-alpine
+    container_name: issue_tracker_nginx_dev
+    restart: unless-stopped
+    depends_on:
+      - frontend
+      - backend
     ports:
-      - "6379:6379"
+      - "80:80"
+    volumes:
+      - ./nginx/nginx.conf:/etc/nginx/nginx.conf:ro
 
   pgadmin:
     image: dpage/pgadmin4:latest
-    container_name: issue_tracker_pgadmin
-    restart: always
+    container_name: issue_tracker_pgadmin_dev
+    restart: unless-stopped
     environment:
       PGADMIN_DEFAULT_EMAIL: admin@issue.com
       PGADMIN_DEFAULT_PASSWORD: admin
@@ -32,11 +204,15 @@ services:
 
   redis-commander:
     image: rediscommander/redis-commander:latest
-    container_name: issue_tracker_redis_commander
-    restart: always
+    container_name: issue_tracker_redis_commander_dev
+    restart: unless-stopped
     environment:
       - REDIS_HOSTS=local:redis:6379
     ports:
       - "8081:8081"
     depends_on:
       - redis
+
+volumes:
+  postgres_dev_data:
+  uploads_dev:

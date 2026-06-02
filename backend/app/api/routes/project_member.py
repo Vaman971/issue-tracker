@@ -12,18 +12,22 @@ from app.db.session import get_db
 from app.models.project_member import ProjectMember
 from app.models.user import User
 from app.schemas.project_member import ProjectMemberCreate, ProjectMemberRead
+from app.models.notification import NotificationType
+from app.services.cache import cache_delete_pattern
+from app.services.notifications import notify
 
 router = APIRouter(prefix="/project_members", tags=["project-members"])
 
+
 @router.post(
-    "/",
+    "",
     response_model=ProjectMemberRead,
-    status_code=status.HTTP_201_CREATED
+    status_code=status.HTTP_201_CREATED,
 )
 async def add_project_member(
     payload: ProjectMemberCreate,
     current_user: User = Depends(get_current_user),
-    db: AsyncSession = Depends(get_db)
+    db: AsyncSession = Depends(get_db),
 ):
     project = await get_project_or_404(
         project_id=payload.project_id,
@@ -53,7 +57,19 @@ async def add_project_member(
 
     db.add(member)
 
+    await notify(
+        db=db,
+        user_id=payload.user_id,
+        type=NotificationType.PROJECT_MEMBER_ADDED,
+        title=f"Added to project: {project.name}",
+        message=f"You've been added to the project '{project.name}'.",
+        meta={"project_id": project.id},
+    )
+
     await db.commit()
     await db.refresh(member)
+
+    await cache_delete_pattern("projects:list:*")
+    await cache_delete_pattern("issues:list:*")
 
     return member

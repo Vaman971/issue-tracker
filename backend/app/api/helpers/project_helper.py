@@ -1,7 +1,8 @@
 from fastapi import HTTPException, status
-from sqlalchemy import select
+from sqlalchemy import func, or_, select
 from collections.abc import Sequence
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import selectinload
 
 from app.models.project import Project
 from app.models.project_member import ProjectMember
@@ -92,26 +93,36 @@ async def validate_project_member_candidate(
 async def list_visible_projects(
     current_user: User,
     db: AsyncSession,
+    q: str | None = None,
+    skip: int = 0,
+    limit: int = 12,
 ) -> Sequence[Project]:
-    if current_user.role == UserRole.ADMIN:
-        result = await db.execute(
-            select(Project).order_by(Project.id)
-        )
-        return result.scalars().all()
+    _eager = [selectinload(Project.leader)]
 
-    if current_user.role == UserRole.PROJECT_LEADER:
-        result = await db.execute(
+    if current_user.role == UserRole.ADMIN:
+        stmt = select(Project).options(*_eager)
+    elif current_user.role == UserRole.PROJECT_LEADER:
+        stmt = (
             select(Project)
             .where(Project.leader_id == current_user.id)
-            .order_by(Project.id)
+            .options(*_eager)
         )
-        return result.scalars().all()
+    else:
+        stmt = (
+            select(Project)
+            .join(ProjectMember, Project.id == ProjectMember.project_id)
+            .where(ProjectMember.user_id == current_user.id)
+            .options(*_eager)
+        )
 
-    result = await db.execute(
-        select(Project)
-        .join(ProjectMember, Project.id == ProjectMember.project_id)
-        .where(ProjectMember.user_id == current_user.id)
-        .order_by(Project.id)
-    )
+    if q:
+        term = f"%{q.lower()}%"
+        stmt = stmt.where(
+            or_(
+                func.lower(Project.name).like(term),
+                func.lower(Project.description).like(term),
+            )
+        )
 
+    result = await db.execute(stmt.order_by(Project.id).offset(skip).limit(limit))
     return result.scalars().all()
