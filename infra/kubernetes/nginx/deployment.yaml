@@ -46,14 +46,14 @@ spec:
               memory: "512Mi"
           livenessProbe:
             httpGet:
-              path: /
+              path: /nginx-health
               port: 80
             initialDelaySeconds: 10
             periodSeconds: 15
             failureThreshold: 3
           readinessProbe:
             httpGet:
-              path: /
+              path: /nginx-health
               port: 80
             initialDelaySeconds: 5
             periodSeconds: 5

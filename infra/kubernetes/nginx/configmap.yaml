@@ -73,6 +73,13 @@ data:
             proxy_send_timeout    60s;
             proxy_read_timeout    60s;
 
+            # Health check — nginx itself, no upstream proxy
+            location /nginx-health {
+                access_log off;
+                return 200 "ok\n";
+                add_header Content-Type text/plain;
+            }
+
             # /api/* → FastAPI backend (strip /api prefix)
             location /api/ {
                 proxy_pass http://backend_upstream/;
