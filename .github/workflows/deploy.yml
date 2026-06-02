@@ -79,6 +79,10 @@ jobs:
         working-directory: backend
         env:
           DATABASE_URL: postgresql+asyncpg://test_user:test_password@localhost:5432/test_db
+          REDIS_URL: redis://localhost:6379/0
+          JWT_SECRET_KEY: ci-test-secret-key-not-for-production
+          JWT_REFRESH_SECRET_KEY: ci-test-refresh-secret-key-not-for-production
+          APP_ENV: testing
         run: alembic upgrade head
       - name: Run tests
         working-directory: backend

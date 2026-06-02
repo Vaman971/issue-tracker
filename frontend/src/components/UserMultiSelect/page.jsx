@@ -101,6 +101,7 @@ export default function UserMultiSelect({
                                 key={u.id}
                                 className={styles.option}
                                 role="option"
+                                aria-selected={false}
                                 onMouseDown={(e) => e.preventDefault()}
                                 onClick={() => handleSelect(u)}
                             >
