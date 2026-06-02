@@ -93,6 +93,7 @@ variable "s3_uploads_bucket" {
 }
 
 variable "acm_certificate_arn" {
-  description = "ARN of the ACM certificate for HTTPS on the ALB"
+  description = "ARN of the ACM certificate for HTTPS on the ALB. Leave empty to skip TLS (HTTP only)."
   type        = string
+  default     = ""
 }

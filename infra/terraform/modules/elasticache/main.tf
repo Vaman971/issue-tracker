@@ -27,8 +27,8 @@ resource "aws_security_group" "redis" {
 }
 
 resource "aws_elasticache_parameter_group" "main" {
-  name_prefix = "${var.name}-redis7-"
-  family      = "redis7"
+  name   = "${var.name}-redis7"
+  family = "redis7"
 
   parameter {
     name  = "maxmemory-policy"
