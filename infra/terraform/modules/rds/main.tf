@@ -32,12 +32,14 @@ resource "aws_db_parameter_group" "main" {
 
   # Tuned for high-concurrency workloads with PgBouncer connection pooling
   parameter {
-    name  = "max_connections"
-    value = "500"
+    name         = "max_connections"
+    value        = "500"
+    apply_method = "pending-reboot"
   }
   parameter {
-    name  = "shared_buffers"
-    value = "{DBInstanceClassMemory/4}"
+    name         = "shared_buffers"
+    value        = "{DBInstanceClassMemory/4}"
+    apply_method = "pending-reboot"
   }
   parameter {
     name  = "effective_cache_size"

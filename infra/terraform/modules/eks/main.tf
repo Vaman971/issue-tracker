@@ -234,6 +234,7 @@ resource "helm_release" "aws_lb_controller" {
   chart      = "aws-load-balancer-controller"
   namespace  = "kube-system"
   version    = "1.8.1"
+  timeout    = 900
 
   set {
     name  = "clusterName"
@@ -259,11 +260,12 @@ resource "helm_release" "external_secrets" {
   namespace        = "external-secrets"
   version          = "0.10.0"
   create_namespace = true
+  timeout          = 600
 
   set {
     name  = "serviceAccount.annotations.eks\\.amazonaws\\.com/role-arn"
     value = var.external_secrets_role_arn
   }
 
-  depends_on = [aws_eks_node_group.app]
+  depends_on = [aws_eks_node_group.app, helm_release.aws_lb_controller]
 }

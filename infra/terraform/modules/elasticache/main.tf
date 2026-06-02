@@ -31,6 +31,10 @@ resource "aws_elasticache_parameter_group" "main" {
   family = "redis7"
 
   parameter {
+    name  = "cluster-enabled"
+    value = "yes"
+  }
+  parameter {
     name  = "maxmemory-policy"
     value = "allkeys-lru"
   }
