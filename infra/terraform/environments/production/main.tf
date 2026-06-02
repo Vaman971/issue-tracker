@@ -97,6 +97,26 @@ module "eks" {
   tags = local.common_tags
 }
 
+# ── EKS access entries ────────────────────────────────────────────────────────
+resource "aws_eks_access_entry" "github_actions" {
+  cluster_name  = module.eks.cluster_name
+  principal_arn = module.iam.github_actions_role_arn
+  type          = "STANDARD"
+  tags          = local.common_tags
+}
+
+resource "aws_eks_access_policy_association" "github_actions" {
+  cluster_name  = module.eks.cluster_name
+  principal_arn = module.iam.github_actions_role_arn
+  policy_arn    = "arn:aws:eks::aws:cluster-access-policy/AmazonEKSClusterAdminPolicy"
+
+  access_scope {
+    type = "cluster"
+  }
+
+  depends_on = [aws_eks_access_entry.github_actions]
+}
+
 # ── Managed PostgreSQL ────────────────────────────────────────────────────────
 module "rds" {
   source = "../../modules/rds"
