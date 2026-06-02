@@ -203,14 +203,26 @@ resource "helm_release" "cluster_autoscaler" {
   namespace  = "kube-system"
   version    = "9.37.0"
 
-  set { name = "autoDiscovery.clusterName"; value = var.cluster_name }
-  set { name = "awsRegion";                 value = var.aws_region }
+  set {
+    name  = "autoDiscovery.clusterName"
+    value = var.cluster_name
+  }
+  set {
+    name  = "awsRegion"
+    value = var.aws_region
+  }
   set {
     name  = "rbac.serviceAccount.annotations.eks\\.amazonaws\\.com/role-arn"
     value = var.cluster_autoscaler_role_arn
   }
-  set { name = "extraArgs.scale-down-delay-after-add"; value = "10m" }
-  set { name = "extraArgs.skip-nodes-with-system-pods"; value = "false" }
+  set {
+    name  = "extraArgs.scale-down-delay-after-add"
+    value = "10m"
+  }
+  set {
+    name  = "extraArgs.skip-nodes-with-system-pods"
+    value = "false"
+  }
 
   depends_on = [aws_eks_node_group.app]
 }
@@ -223,8 +235,14 @@ resource "helm_release" "aws_lb_controller" {
   namespace  = "kube-system"
   version    = "1.8.1"
 
-  set { name = "clusterName"; value = var.cluster_name }
-  set { name = "replicaCount"; value = "2" }
+  set {
+    name  = "clusterName"
+    value = var.cluster_name
+  }
+  set {
+    name  = "replicaCount"
+    value = "2"
+  }
   set {
     name  = "serviceAccount.annotations.eks\\.amazonaws\\.com/role-arn"
     value = var.lb_controller_role_arn

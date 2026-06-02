@@ -18,9 +18,18 @@ variable "node_instance_type" {
   default = "c6i.xlarge"
 }
 
-variable "node_min_size"     { type = number; default = 3 }
-variable "node_max_size"     { type = number; default = 15 }
-variable "node_desired_size" { type = number; default = 3 }
+variable "node_min_size" {
+  type    = number
+  default = 3
+}
+variable "node_max_size" {
+  type    = number
+  default = 15
+}
+variable "node_desired_size" {
+  type    = number
+  default = 3
+}
 
 variable "lb_controller_role_arn"      { type = string }
 variable "cluster_autoscaler_role_arn" { type = string }
