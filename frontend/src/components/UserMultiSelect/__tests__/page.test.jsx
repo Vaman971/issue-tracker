@@ -1,4 +1,4 @@
-import { render, screen, fireEvent } from "@testing-library/react";
+import { render, screen, fireEvent, within } from "@testing-library/react";
 import UserMultiSelect from "../page";
 
 const mockUsers = [
@@ -55,8 +55,10 @@ test("opens dropdown on input focus", () => {
 test("excludes already-selected users from dropdown", () => {
     renderMultiSelect({ value: [mockUsers[0]] });
     fireEvent.focus(screen.getByRole("textbox"));
-    expect(screen.queryByText("Alice Johnson")).not.toBeInTheDocument();
-    expect(screen.getByText("Bob Smith")).toBeInTheDocument();
+    // Alice appears as a pill — scope the check to the dropdown listbox only
+    const listbox = screen.getByRole("listbox");
+    expect(within(listbox).queryByText("Alice Johnson")).not.toBeInTheDocument();
+    expect(within(listbox).getByText("Bob Smith")).toBeInTheDocument();
 });
 
 test("filters dropdown based on search query", () => {

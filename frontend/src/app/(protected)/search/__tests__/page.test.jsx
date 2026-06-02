@@ -7,6 +7,7 @@ import { api } from "@/store/api";
 
 jest.mock("next/navigation", () => ({
     useRouter: () => ({ push: jest.fn() }),
+    useSearchParams: () => ({ get: jest.fn().mockReturnValue("") }),
 }));
 
 jest.mock("@/store/features/search/searchApi", () => ({

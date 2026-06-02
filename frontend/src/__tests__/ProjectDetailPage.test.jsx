@@ -1,17 +1,25 @@
 /**
- * Tests for the Project Detail page — verifies:
- * 1. The "add member" UI is a <select> dropdown (not a number input)
- * 2. Member names come from m.user.full_name / m.user.email (not m.email)
+ * Tests for the Project Detail page — verifies member management UI.
+ * The add-member field uses UserMultiSelect (searchable, pill-based) instead
+ * of a plain <select>; member data comes from m.user.* not m.*.
  */
-import { render, screen } from "@testing-library/react";
+import { render, screen, fireEvent } from "@testing-library/react";
 
-// ── Next.js / React-Redux ─────────────────────────────────────────────────────
+// ── Next.js navigation ────────────────────────────────────────────────────────
 jest.mock("next/navigation", () => ({
     useParams: () => ({ id: "42" }),
+    useRouter: () => ({ push: jest.fn() }),
 }));
 
+// RTK Query needs all three react-redux hooks when the api module is imported
 jest.mock("react-redux", () => ({
-    useSelector: () => ({ id: 99, role: "project_leader" }),
+    useSelector: jest.fn(() => ({ id: 99, role: "project_leader" })),
+    useDispatch: jest.fn(() => jest.fn()),
+    useStore: jest.fn(() => ({
+        getState: jest.fn(() => ({})),
+        dispatch: jest.fn(),
+        subscribe: jest.fn(() => jest.fn()),
+    })),
 }));
 
 // ── RTK Query hooks ───────────────────────────────────────────────────────────
@@ -38,15 +46,17 @@ const mockMembers = [
 ];
 
 const mockCandidates = [
-    { id: 20, email: "candidate@example.com", full_name: "Candidate One", role: "developer", is_active: true },
+    { id: 20, email: "candidate@example.com", full_name: "Candidate One", role: "developer" },
 ];
 
 jest.mock("@/store/features/projects/projectsApi", () => ({
-    useGetProjectQuery:        () => ({ data: mockProject, isLoading: false }),
-    useGetProjectMembersQuery: () => ({ data: mockMembers, isLoading: false }),
-    useGetMemberCandidatesQuery: () => ({ data: mockCandidates, isLoading: false }),
+    useGetProjectQuery:             () => ({ data: mockProject, isLoading: false }),
+    useUpdateProjectMutation:       () => [jest.fn(), { isLoading: false }],
+    useGetProjectMembersQuery:      () => ({ data: mockMembers, isLoading: false }),
     useAddProjectMemberMutation:    () => [jest.fn(), { isLoading: false }],
-    useRemoveProjectMemberMutation: () => [jest.fn()],
+    useRemoveProjectMemberMutation: () => [jest.fn(), { isLoading: false }],
+    useGetMemberCandidatesQuery:    () => ({ data: mockCandidates, isLoading: false }),
+    useGetProjectIssuesQuery:       () => ({ data: [], isLoading: false }),
 }));
 
 jest.mock("@/store/features/labels/labelsApi", () => ({
@@ -59,24 +69,60 @@ jest.mock("@/store/features/stats/statsApi", () => ({
     useGetProjectStatsQuery: () => ({ data: null }),
 }));
 
+jest.mock("@/store/features/users/usersApi", () => ({
+    useGetUserLeadersQuery: () => ({ data: [], isLoading: false }),
+}));
+
+// ── Sub-component stubs ───────────────────────────────────────────────────────
 jest.mock("@/components/RoleGate/page", () => ({
     __esModule: true,
     default: ({ children }) => <>{children}</>,
+}));
+
+jest.mock("@/components/CreateIssueModal/page", () => ({
+    __esModule: true,
+    default: () => null,
+}));
+
+// UserSelect stub — renders a labelled textbox
+jest.mock("@/components/UserSelect/page", () => ({
+    __esModule: true,
+    default: ({ placeholder }) => (
+        <input placeholder={placeholder || "Search leader"} aria-label="Leader search" />
+    ),
+}));
+
+// UserMultiSelect stub — renders a textbox + visible candidate list
+jest.mock("@/components/UserMultiSelect/page", () => ({
+    __esModule: true,
+    default: ({ users = [], placeholder }) => (
+        <div>
+            <input placeholder={placeholder || "Search users"} aria-label="Member search" />
+            {users.map((u) => (
+                <span key={u.id} data-testid="candidate">
+                    {u.full_name || u.email}
+                </span>
+            ))}
+        </div>
+    ),
 }));
 
 import ProjectDetailPage from "@/app/(protected)/projects/[id]/page";
 
 // ── Tests ─────────────────────────────────────────────────────────────────────
 describe("ProjectDetailPage — member management", () => {
-    it("renders a <select> for adding members, not a number input", () => {
+    it("has no spinbutton (type=number) input", () => {
         render(<ProjectDetailPage />);
-        // spinbutton = type="number" — must not be present
         expect(screen.queryByRole("spinbutton")).not.toBeInTheDocument();
-        // The add-member select should exist
-        expect(screen.getByRole("combobox")).toBeInTheDocument();
     });
 
-    it("lists candidates in the dropdown", () => {
+    it("renders the add-member searchable field (UserMultiSelect)", () => {
+        render(<ProjectDetailPage />);
+        // The stub renders an input with aria-label "Member search"
+        expect(screen.getByLabelText("Member search")).toBeInTheDocument();
+    });
+
+    it("passes candidates to UserMultiSelect so they are visible", () => {
         render(<ProjectDetailPage />);
         expect(screen.getByText("Candidate One")).toBeInTheDocument();
     });
@@ -91,7 +137,7 @@ describe("ProjectDetailPage — member management", () => {
         expect(screen.getByText("qa@example.com")).toBeInTheDocument();
     });
 
-    it("shows member role from m.user.role, not m.role", () => {
+    it("shows member role from m.user.role", () => {
         render(<ProjectDetailPage />);
         expect(screen.getByText("developer")).toBeInTheDocument();
         expect(screen.getByText("qa")).toBeInTheDocument();
