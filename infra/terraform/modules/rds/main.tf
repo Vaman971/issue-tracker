@@ -105,15 +105,14 @@ resource "aws_db_instance" "main" {
   backup_retention_period = 7
   backup_window           = "03:00-04:00"
   maintenance_window      = "Mon:04:00-Mon:05:00"
-  deletion_protection     = true
+  deletion_protection     = false
+  skip_final_snapshot     = true
 
   performance_insights_enabled          = true
   performance_insights_retention_period = 7
 
   enabled_cloudwatch_logs_exports = ["postgresql", "upgrade"]
 
-  skip_final_snapshot = false
-  final_snapshot_identifier = "${var.name}-final-snapshot"
 
   tags = var.tags
 }
