@@ -546,3 +546,21 @@ aws eks associate-access-policy \
 ```
 
 This is now also managed by Terraform (`aws_eks_access_entry` + `aws_eks_access_policy_association` in `environments/production/main.tf`).
+
+### Teardown: always delete the Kubernetes Ingress before running `terraform destroy`
+
+The ALB is created by the AWS Load Balancer Controller, not Terraform. If you destroy EKS without deleting the Ingress first, the LB Controller has no chance to clean up the ALB's security groups. Those security groups remain in the VPC and `terraform destroy` fails on VPC deletion with `DependencyViolation`. Always run:
+
+```bash
+kubectl delete ingress issue-tracker -n issue-tracker
+# wait ~60 seconds
+terraform destroy
+```
+
+### Teardown: never delete the S3 state bucket while `terraform destroy` is running
+
+The state bucket is the Terraform backend. Deleting it mid-destroy causes Terraform to fail saving state, leaving an `errored.tfstate` file locally and requiring manual recovery. Full teardown order is documented in [`infra/README.md`](infra/README.md#teardown--destroy).
+
+### Teardown: versioned S3 buckets require all versions deleted before `delete-bucket`
+
+`aws s3 rm --recursive` only removes current object versions. A versioned bucket still has version history and delete markers, which block bucket deletion with `BucketNotEmpty`. Use the Python script in `infra/README.md` which iterates all versions and delete markers before deleting the bucket.

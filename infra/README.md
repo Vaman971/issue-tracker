@@ -17,8 +17,9 @@ Kubernetes + Terraform on AWS EKS targeting **10K+ RPS** (ap-south-1).
 9. [Day-2 Operations](#day-2-operations)
 10. [Scaling](#scaling)
 11. [Adding HTTPS](#adding-https)
-12. [Troubleshooting](#troubleshooting)
-13. [Known Errors and Fixes](#known-errors-and-fixes)
+12. [Teardown / Destroy](#teardown--destroy)
+13. [Troubleshooting](#troubleshooting)
+14. [Known Errors and Fixes](#known-errors-and-fixes)
 
 ---
 
@@ -355,7 +356,8 @@ PostgreSQL 16 instance.
 | Multi-AZ | enabled |
 | Storage | 100 GB gp3, auto-scales to 1 TB |
 | Encryption | enabled (AWS managed key) |
-| Deletion protection | enabled — disable manually before destroying |
+| Deletion protection | disabled (`deletion_protection = false`) |
+| Final snapshot | skipped (`skip_final_snapshot = true`) — destroy is clean with no manual steps |
 | Backups | 7-day retention |
 | Parameter group | `max_connections=500`, `work_mem=4096kB`, `maintenance_work_mem=128MB`, slow query logging ≥500ms |
 
@@ -719,6 +721,193 @@ When you have a domain and an ACM certificate:
 
 ---
 
+## Teardown / Destroy
+
+> **Critical rule**: the S3 state bucket and DynamoDB lock table are the Terraform backend.
+> They must be deleted **last** — only after `terraform destroy` finishes successfully.
+> Deleting them while Terraform is running corrupts state and forces manual recovery.
+
+### Correct teardown order
+
+#### Step 1 — Delete the Kubernetes Ingress (removes the ALB)
+
+The ALB is created by the AWS Load Balancer Controller from the Ingress resource — it is NOT managed by Terraform. If you run `terraform destroy` before deleting the Ingress, the LB Controller's security groups stay attached to the VPC and `terraform destroy` fails with `DependencyViolation` on the VPC.
+
+```bash
+kubectl delete ingress issue-tracker -n issue-tracker
+
+# Wait ~60 seconds then confirm the ALB is gone
+aws elbv2 describe-load-balancers --region ap-south-1 \
+  --query 'LoadBalancers[*].LoadBalancerName' --output text
+# Should return empty
+```
+
+#### Step 2 — Empty the S3 uploads bucket
+
+The uploads bucket has `force_destroy = false`. Terraform cannot delete it if it contains objects.
+
+```bash
+aws s3 rm s3://issue-tracker-uploads-prod --recursive --region ap-south-1
+```
+
+#### Step 3 — Run terraform destroy
+
+```bash
+cd infra/terraform/environments/production
+terraform destroy
+```
+
+Type `yes` when prompted. Expected duration: **15–25 minutes**.
+
+> **Timings to expect**:
+> - EKS node group drain: up to 20 minutes (Kubernetes evicts all pods gracefully)
+> - ElastiCache deletion: 7–10 minutes
+> - RDS deletion: 5–8 minutes (no final snapshot — `skip_final_snapshot = true`)
+> - VPC and networking: 2–3 minutes
+
+#### Step 4 — Check for leftover LB Controller security groups
+
+Even after deleting the Ingress, the LB Controller sometimes leaves a security group behind. If `terraform destroy` fails on VPC deletion with `DependencyViolation`:
+
+```bash
+VPC_ID=$(aws ec2 describe-vpcs --region ap-south-1 \
+  --filters "Name=tag:Name,Values=issue-tracker-vpc" \
+  --query 'Vpcs[0].VpcId' --output text)
+
+# List all non-default security groups still in the VPC
+aws ec2 describe-security-groups --region ap-south-1 \
+  --filters "Name=vpc-id,Values=$VPC_ID" \
+  --query 'SecurityGroups[?GroupName!=`default`].{Id:GroupId,Name:GroupName}' \
+  --output table
+```
+
+Delete any `k8s-traffic-*` or `k8s-elb-*` security groups found:
+
+```bash
+aws ec2 delete-security-group --group-id sg-XXXXXXXXX --region ap-south-1
+```
+
+Then re-run `terraform destroy` — it will pick up where it left off.
+
+#### Step 5 — Delete bootstrap resources (ONLY after destroy succeeds)
+
+These were created by `bootstrap.sh` and are outside Terraform state. Delete them only after `terraform destroy` exits cleanly.
+
+```bash
+# The state bucket has versioning enabled — must delete all versions before deleting bucket
+python3 -c "
+import subprocess, json
+
+bucket = 'issue-tracker-terraform-state'
+region = 'ap-south-1'
+
+result = subprocess.run([
+    'aws', 's3api', 'list-object-versions',
+    '--bucket', bucket, '--region', region
+], capture_output=True, text=True)
+
+data = json.loads(result.stdout) if result.stdout.strip() else {}
+
+for kind in ['Versions', 'DeleteMarkers']:
+    for obj in data.get(kind, []):
+        subprocess.run([
+            'aws', 's3api', 'delete-object',
+            '--bucket', bucket, '--region', region,
+            '--key', obj['Key'],
+            '--version-id', obj['VersionId']
+        ])
+        print('Deleted', obj['Key'], '@', obj['VersionId'])
+
+subprocess.run(['aws', 's3api', 'delete-bucket', '--bucket', bucket, '--region', region])
+print('State bucket deleted.')
+"
+
+# Delete DynamoDB lock table
+aws dynamodb delete-table \
+  --table-name issue-tracker-terraform-locks \
+  --region ap-south-1
+```
+
+#### Step 6 — Force-delete Secrets Manager secrets
+
+Secrets have a 7-day recovery window. Force-delete them immediately to stop any charges:
+
+```bash
+for secret in \
+  "issue-tracker/production" \
+  "issue-tracker/rds-password" \
+  "issue-tracker/redis-auth-token"; do
+  aws secretsmanager delete-secret \
+    --secret-id "$secret" \
+    --force-delete-without-recovery \
+    --region ap-south-1 2>/dev/null && echo "Deleted $secret"
+done
+```
+
+#### Step 7 — Verify everything is gone
+
+```bash
+echo "=== EC2 instances ===" && \
+aws ec2 describe-instances --region ap-south-1 \
+  --filters "Name=instance-state-name,Values=running" \
+  --query 'Reservations[*].Instances[*].InstanceId' --output text
+
+echo "=== NAT Gateways (cost ~$32/month each) ===" && \
+aws ec2 describe-nat-gateways --region ap-south-1 \
+  --filter "Name=state,Values=available" \
+  --query 'NatGateways[*].NatGatewayId' --output text
+
+echo "=== Load Balancers ===" && \
+aws elbv2 describe-load-balancers --region ap-south-1 \
+  --query 'LoadBalancers[*].LoadBalancerName' --output text
+
+echo "=== RDS instances ===" && \
+aws rds describe-db-instances --region ap-south-1 \
+  --query 'DBInstances[*].DBInstanceIdentifier' --output text
+
+echo "=== ElastiCache clusters ===" && \
+aws elasticache describe-replication-groups --region ap-south-1 \
+  --query 'ReplicationGroups[*].ReplicationGroupId' --output text
+```
+
+All should return empty output.
+
+---
+
+### Recovery: terraform destroy failed mid-way and state is lost
+
+This happens when the S3 state bucket is deleted while `terraform destroy` is still running, or when the operation times out. Terraform writes `errored.tfstate` locally in this case.
+
+```bash
+cd infra/terraform/environments/production
+
+# 1. Confirm the errored state file exists
+ls -la errored.tfstate
+
+# 2. Create a local backend override (so Terraform does not need the S3 bucket)
+cat > backend_override.tf << 'EOF'
+terraform {
+  backend "local" {}
+}
+EOF
+
+# 3. Use the errored state as the local state
+cp errored.tfstate terraform.tfstate
+
+# 4. Re-init with local backend
+terraform init -reconfigure
+
+# 5. Destroy what is left
+terraform destroy
+
+# 6. Clean up temporary files after destroy succeeds
+rm backend_override.tf terraform.tfstate terraform.tfstate.backup errored.tfstate 2>/dev/null
+```
+
+Then proceed with Steps 5 and 6 above (delete bootstrap resources and secrets).
+
+---
+
 ## Troubleshooting
 
 ### Backend pods in CrashLoopBackOff
@@ -962,3 +1151,145 @@ variable "x" {
 If `NEXT_PUBLIC_API_URL` is not set in GitHub Secrets when the pipeline runs the frontend build, the value will be empty or a placeholder in the production JavaScript bundle. All API calls from the browser will fail.
 
 Set the correct ALB DNS (or your domain) in the GitHub Secret **before** triggering a frontend deploy.
+
+---
+
+### 12. `terraform destroy` fails: VPC DependencyViolation
+
+**Error**: `deleting EC2 VPC: DependencyViolation: The vpc has dependencies and cannot be deleted`
+
+**Cause**: The AWS Load Balancer Controller creates security groups in the VPC when it provisions the ALB. These groups are not managed by Terraform. When the EKS cluster is destroyed, the LB Controller pods are gone and can no longer clean up after themselves — the security groups are left orphaned in the VPC.
+
+**Fix**: Before running `terraform destroy`, always delete the Kubernetes Ingress first so the LB Controller can clean up the ALB and its security groups while it is still running:
+
+```bash
+kubectl delete ingress issue-tracker -n issue-tracker
+# Wait ~60 seconds for the ALB to be deleted by the controller
+aws elbv2 describe-load-balancers --region ap-south-1 \
+  --query 'LoadBalancers[*].LoadBalancerName' --output text
+# Confirm empty, then run terraform destroy
+```
+
+If you already ran `terraform destroy` and it failed, find and delete the leftover security groups manually:
+
+```bash
+# Find all non-default security groups in the VPC
+aws ec2 describe-security-groups --region ap-south-1 \
+  --filters "Name=vpc-id,Values=vpc-XXXXXXXXX" \
+  --query 'SecurityGroups[?GroupName!=`default`].{Id:GroupId,Name:GroupName}' \
+  --output table
+
+# Delete each one (look for names starting with k8s-traffic- or k8s-elb-)
+aws ec2 delete-security-group --group-id sg-XXXXXXXXX --region ap-south-1
+
+# Then re-run terraform destroy — it picks up where it left off
+terraform destroy
+```
+
+---
+
+### 13. `terraform destroy` fails: ECR repositories not empty
+
+**Error**: `RepositoryNotEmptyException: The repository cannot be deleted because it still contains images`
+
+**Cause**: `force_delete = false` (the old default) prevents Terraform from deleting ECR repos that contain images. The fix is now in the codebase (`force_delete = true`), but if you are running an older version:
+
+```bash
+# Delete all images in the repo, then destroy
+for repo in issue-tracker-backend issue-tracker-frontend; do
+  ids=$(aws ecr list-images --repository-name $repo --region ap-south-1 \
+        --query 'imageIds[*]' --output json 2>/dev/null)
+  [ "$ids" != "[]" ] && [ -n "$ids" ] && \
+    aws ecr batch-delete-image --repository-name $repo \
+      --image-ids "$ids" --region ap-south-1
+  aws ecr delete-repository --repository-name $repo --force --region ap-south-1 2>/dev/null
+done
+```
+
+---
+
+### 14. `terraform destroy` fails: S3 state bucket already deleted / DNS not found
+
+**Error**: `failed to upload state: dial tcp: lookup issue-tracker-terraform-state.s3.ap-south-1.amazonaws.com: no such host`
+
+**Cause**: The S3 state bucket was manually deleted (following teardown instructions) while `terraform destroy` was still running. Terraform could not save the updated state after some resources were deleted, resulting in an `errored.tfstate` file written locally.
+
+**Fix**: Switch to local backend and continue from the saved state:
+
+```bash
+cd infra/terraform/environments/production
+
+cat > backend_override.tf << 'EOF'
+terraform {
+  backend "local" {}
+}
+EOF
+
+cp errored.tfstate terraform.tfstate
+terraform init -reconfigure
+terraform destroy
+
+# Clean up after success
+rm backend_override.tf terraform.tfstate terraform.tfstate.backup errored.tfstate 2>/dev/null
+```
+
+**Prevention**: Always delete the S3 state bucket and DynamoDB lock table **after** `terraform destroy` completes successfully — never during.
+
+---
+
+### 15. S3 versioned bucket cannot be deleted with `aws s3 rm` or `delete-bucket`
+
+**Error**: `BucketNotEmpty: The bucket you tried to delete is not empty. You must delete all versions in the bucket.`
+
+**Cause**: The Terraform state bucket has versioning enabled. `aws s3 rm --recursive` only deletes current object versions — it leaves all previous versions and delete markers, which still count as "not empty" for bucket deletion.
+
+**Fix**: Use the Python script that deletes all versions and delete markers before deleting the bucket:
+
+```bash
+python3 -c "
+import subprocess, json
+
+bucket = 'issue-tracker-terraform-state'
+region = 'ap-south-1'
+
+result = subprocess.run([
+    'aws', 's3api', 'list-object-versions',
+    '--bucket', bucket, '--region', region
+], capture_output=True, text=True)
+
+data = json.loads(result.stdout) if result.stdout.strip() else {}
+
+for kind in ['Versions', 'DeleteMarkers']:
+    for obj in data.get(kind, []):
+        subprocess.run([
+            'aws', 's3api', 'delete-object',
+            '--bucket', bucket, '--region', region,
+            '--key', obj['Key'],
+            '--version-id', obj['VersionId']
+        ])
+        print('Deleted', obj['Key'], '@', obj['VersionId'])
+
+subprocess.run(['aws', 's3api', 'delete-bucket', '--bucket', bucket, '--region', region])
+print('Done.')
+"
+```
+
+---
+
+### 16. EKS node group deletion times out (>1 hour)
+
+**Error**: `waiting for EKS Node Group delete: timeout while waiting for resource to be gone (last state: 'DELETING', timeout: 1h0m0s)`
+
+**Cause**: Terraform's EKS node group deletion timeout is 1 hour. If there are many pods with long graceful shutdown periods (e.g. 60s `terminationGracePeriodSeconds`), draining all nodes across 3 AZs can exceed this.
+
+**What to do**: The node group continues draining in the background even after Terraform times out. Check progress:
+
+```bash
+aws eks describe-nodegroup \
+  --cluster-name issue-tracker-production \
+  --nodegroup-name issue-tracker-app \
+  --region ap-south-1 \
+  --query 'nodegroup.status' --output text
+```
+
+When it returns `ResourceNotFoundException` (the group no longer exists), re-run `terraform destroy` — it will skip the already-deleted resources and continue with the remaining ones (VPC, IAM, etc.).
