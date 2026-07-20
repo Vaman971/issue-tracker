@@ -69,6 +69,11 @@ class Settings(BaseSettings):
     # Admin limit — increase by bumping this value
     MAX_ADMINS: int = 1
 
+    # Open-AI API Key
+    OPENAI_API_KEY:str = ""
+    OPENAI_EMBEDDING_MODEL: str = "text-embedding-3-small"
+    OPENAI_EMBEDDING_CONCURRENCY: int = 10
+
     @field_validator(
         "DATABASE_URL",
         "JWT_SECRET_KEY",

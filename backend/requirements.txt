@@ -8,6 +8,7 @@ sqlalchemy
 asyncpg
 aiosqlite
 alembic
+pgvector
 
 # Settings & validation
 pydantic-settings

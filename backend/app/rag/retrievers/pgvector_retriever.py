@@ -1,0 +1,51 @@
+from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession
+
+from app.models.rag_document import RagDocument
+
+from app.rag.embeddings.openai_embedder import OpenAiEmbedder
+from app.rag.retrievers.base import BaseRetriever
+from app.rag.retrievers.schemas import SearchResult
+
+class PGVectorRetriever(BaseRetriever):
+    def __init__(self, session: AsyncSession):
+        self.session = session
+        self.embedder = OpenAiEmbedder()
+    
+    async def search(self, query: str, top_k: int = 5) -> list[SearchResult]:
+        
+        query_embedding = await self.embedder.embed_text(query)
+
+        stmt = (
+            select(
+                RagDocument,
+
+                RagDocument.embedding.cosine_distance(
+                    query_embedding
+                ).label("distance"),
+            )
+            .where(
+                RagDocument.is_active.is_(True),
+            )
+            .order_by("distance")
+            .limit(top_k)
+        )
+
+        result = await self.session.execute(stmt)
+        rows = result.all()
+
+        return [
+            SearchResult(
+                entity_type=row.RagDocument.entity_type,
+
+                entity_id=row.RagDocument.entity_id,
+
+                chunk_index=row.RagDocument.chunk_index,
+
+                content=row.RagDocument.content,
+
+                similarity= 1 - row.distance, # low distance means high similarity
+
+                metadata=row.RagDocument.metadata,   
+            ) for row in rows
+        ]
