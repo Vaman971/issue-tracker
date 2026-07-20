@@ -15,7 +15,7 @@
 services:
 
   postgres:
-    image: postgres:16
+    image: pgvector/pgvector:pg16
     container_name: issue_tracker_postgres_dev
     restart: unless-stopped
     environment:
