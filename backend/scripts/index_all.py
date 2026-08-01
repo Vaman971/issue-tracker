@@ -2,7 +2,7 @@ import asyncio
 
 from app.db.session import AsyncSessionLocal
 
-from app.rag.services.ingestion_service import IngestionService
+from backend.app.rag.services.ingestion.ingestion_service import IngestionService
 
 async def main():
     

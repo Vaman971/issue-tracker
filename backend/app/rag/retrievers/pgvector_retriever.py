@@ -6,14 +6,20 @@ from app.models.rag_document import RagDocument
 from app.rag.embeddings.openai_embedder import OpenAiEmbedder
 from app.rag.retrievers.base import BaseRetriever
 from app.rag.retrievers.schemas import SearchResult
+from app.rag.tracing.schema import RetrievalTrace
 
 class PGVectorRetriever(BaseRetriever):
     def __init__(self, session: AsyncSession):
         self.session = session
         self.embedder = OpenAiEmbedder()
-    
-    async def search(self, query: str, top_k: int = 5) -> list[SearchResult]:
-        
+
+    async def search(
+        self,
+        query: str,
+        top_k: int = 5,
+        trace: RetrievalTrace | None = None,
+    ) -> list[SearchResult]:
+
         query_embedding = await self.embedder.embed_text(query)
 
         stmt = (
@@ -34,7 +40,7 @@ class PGVectorRetriever(BaseRetriever):
         result = await self.session.execute(stmt)
         rows = result.all()
 
-        return [
+        results = [
             SearchResult(
                 entity_type=row.RagDocument.entity_type,
 
@@ -44,8 +50,14 @@ class PGVectorRetriever(BaseRetriever):
 
                 content=row.RagDocument.content,
 
-                similarity= 1 - row.distance, # low distance means high similarity
+                score= 1 - row.distance, # low distance means high similarity
 
-                metadata=row.RagDocument.metadata,   
+                metadata=row.RagDocument.metadata_json,
             ) for row in rows
         ]
+
+        if trace is not None:
+            trace.semantic_results = results
+            trace.final_results = results
+
+        return results

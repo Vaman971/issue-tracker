@@ -1,22 +1,22 @@
 import asyncio
 
 from app.db.session import AsyncSessionLocal
-from app.rag.services.retrieval_service import RetrievalService
+from backend.app.rag.services.retrieval.retrieval_service import RetrievalService
 
 async def main():
 
     async with AsyncSessionLocal() as session:
         service = RetrievalService(session)
 
-        results = await service.search(
-            "OAuth logic issue",
-            top_k=5
+        results = await service.hybrid_search(
+            "login timeout",
+            top_k=2
         )
 
         for result in results:
             print("="*80)
 
-            print(result.similarity)
+            print(result.score)
 
             print()
 
