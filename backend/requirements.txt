@@ -38,6 +38,9 @@ flower
 boto3
 botocore
 
+# Prompt templating (RAG)
+jinja2
+
 # HTTP client & testing
 pytest
 pytest-cov

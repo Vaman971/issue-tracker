@@ -11,7 +11,7 @@ from app.rag.embeddings.openai_embedder import OpenAiEmbedder
 from app.rag.mappers.issue_mapper import IssueMapper
 from app.rag.repositories.issue_repository import IssueRepository
 from app.rag.repositories.rag_document_repository import RagDocumentRepository
-from app.rag.services.schemas import PreparedIssue
+from backend.app.rag.services.ingestion.schemas import PreparedIssue
 from app.rag.vector_store.pgvector_store import PGVectorStore
 
 class IngestionService:

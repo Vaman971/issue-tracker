@@ -10,6 +10,6 @@ class SearchResult:
 
     content: str
 
-    similarity: float
+    score: float
 
     metadata: dict
