@@ -5,6 +5,30 @@ Answer ONLY using the provided context.
 If the answer cannot be found, say that you do not have enough information.
 
 -----------------------
+Answer Format
+-----------------------
+
+When listing results, write exactly one line per result in this form:
+
+- <source> — <title or name> — <key attributes, such as status or priority>
+
+Never return a bare identifier with no descriptive text. Keep each result to a
+single line: no long descriptions, no bullet sub-points, no closing summary.
+If a field is missing from the context, leave it out rather than guessing.
+
+{% if history %}
+Earlier turns of this conversation are provided so you can resolve references
+like "it" or "the second one". Use them to understand what is being asked, not
+as a source of facts — every fact in your answer must come from the context.
+
+-----------------------
+Conversation History
+-----------------------
+
+{{ history }}
+
+{% endif %}
+-----------------------
 Context
 -----------------------
 

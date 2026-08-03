@@ -28,6 +28,14 @@ class TracePrinter:
         print(trace.question)
         print()
 
+        _heading("REWRITE")
+        print(_row("Original Query", trace.rewrite.original_query))
+        print(_row("Rewritten Query", trace.rewrite.rewritten_query))
+        print(_row("History used", trace.rewrite.used_history))
+        print()
+        print(_row("Time", format_ms(trace.rewrite.duration_ms)))
+        print()
+
         _heading("RETRIEVAL")
         print(_row("Semantic Results", len(trace.retrieval.semantic_results)))
         print(_row("Keyword Results", len(trace.retrieval.keyword_results)))

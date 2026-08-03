@@ -1,5 +1,4 @@
 from dataclasses import dataclass, field
-from typing import Any
 
 from app.rag.context.schemas import ContextDocument
 from app.rag.retrievers.schemas import SearchResult
@@ -44,6 +43,17 @@ class LLMTrace:
 
     duration_ms: float = 0.0
 
+@dataclass(slots=True)
+class RewriteTrace:
+
+    original_query: str = ""
+
+    rewritten_query: str = ""
+
+    used_history: bool = False
+
+    duration_ms: float = 0.0
+
 
 @dataclass(slots=True)
 class RAGTrace:
@@ -57,3 +67,5 @@ class RAGTrace:
     prompt: PromptTrace = field(default_factory=PromptTrace)
 
     llm: LLMTrace = field(default_factory=LLMTrace)
+
+    rewrite: RewriteTrace = field(default_factory= RewriteTrace)
