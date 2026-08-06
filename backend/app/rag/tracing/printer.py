@@ -31,31 +31,31 @@ class TracePrinter:
         print()
 
         _heading("REWRITE")
-        print(_row("Original Query", trace.rewrite.original_query))
-        print(_row("Rewritten Query", trace.rewrite.rewritten_query))
-        print(_row("History used", trace.rewrite.used_history))
+        print(_row("Original Query", trace.query.rewrite.original_query))
+        print(_row("Rewritten Query", trace.query.rewrite.rewritten_query))
+        print(_row("History used", trace.query.rewrite.used_history))
         print()
-        print(_row("Time", format_ms(trace.rewrite.duration_ms)))
+        print(_row("Time", format_ms(trace.query.rewrite.duration_ms)))
         print()
 
         _heading("FILTER")
-        print(_row("Search Query", trace.filter.query))
+        print(_row("Search Query", trace.query.filter.query))
         applied = {
             name: value
-            for name, value in asdict(trace.filter.filters).items()
+            for name, value in asdict(trace.query.filter.filters).items()
             if value
         }
         print(_row("Filters", applied or "none"))
         print()
-        print(_row("Time", format_ms(trace.filter.duration_ms)))
+        print(_row("Time", format_ms(trace.query.filter.duration_ms)))
         print()
 
         _heading("RETRIEVAL")
-        print(_row("Semantic Results", len(trace.retrieval.semantic_results)))
-        print(_row("Keyword Results", len(trace.retrieval.keyword_results)))
-        print(_row("Merged Results", len(trace.retrieval.final_results)))
+        print(_row("Semantic Results", len(trace.query.retrieval.semantic_results)))
+        print(_row("Keyword Results", len(trace.query.retrieval.keyword_results)))
+        print(_row("Merged Results", len(trace.query.retrieval.final_results)))
         print()
-        print(_row("Time", format_ms(trace.retrieval.duration_ms)))
+        print(_row("Time", format_ms(trace.query.retrieval.duration_ms)))
         print()
 
         _heading("LLM")

@@ -11,21 +11,23 @@ from app.rag.prompts.loader import PromptTemplateLoader
 from app.rag.llm.openai_llm import OpenAILLM
 from app.rag.query_rewriter.openai_rewriter import OpenAIQueryRewriter
 from app.rag.filtering.filter_extractor import OpenAIFilterExtractor
+from app.rag.query_pipeline.pipeline import QueryPipeline
+from app.rag.query_pipeline.stages.rewrite import RewriteStage
+from app.rag.query_pipeline.stages.filter import FilterStage
+from app.rag.query_pipeline.stages.search import SearchStage
 
 
 class ChatService:
-    def __init__(self, retriever: HybridRetriever, context_builder: ContextBuilder, llm_provider: OpenAILLM, prompt_builder: PromptTemplateLoader, memory: InMemoryMemory, query_rewriter: OpenAIQueryRewriter, filter_extractor: OpenAIFilterExtractor) -> None:
+    def __init__(self, query_pipeline: QueryPipeline, context_builder: ContextBuilder, llm_provider: OpenAILLM, prompt_builder: PromptTemplateLoader, memory: InMemoryMemory) -> None:
 
         # build the RAG pipeline once, reuse it for every question;
         # it owns the conversation history for the whole session
         self.rag_service = RAGService(
-            retriever=retriever,
+            query_pipeline=query_pipeline,
             context_builder=context_builder,
             prompt_loader=prompt_builder,
             llm=llm_provider,
             memory=memory,
-            query_rewriter=query_rewriter,
-            filter_extractor=filter_extractor,
         )
 
 
@@ -54,26 +56,33 @@ async def main() -> None:
         # one loader shared by the answer and rewrite templates
         prompt_loader = PromptTemplateLoader()
 
-        # query rewriter
-        query_rewriter = OpenAIQueryRewriter(
-            prompt_loader=prompt_loader
-        )
-
         retriever = HybridRetriever(
             vector_retriever=PGVectorRetriever(session),
             rag_repository=RagDocumentRepository(session),
         )
 
+        # question in, searched-for documents out — order matters, each stage
+        # narrows what the next one works with
+        query_pipeline = QueryPipeline(
+            stages=[
+                RewriteStage(
+                    rewriter=OpenAIQueryRewriter(prompt_loader=prompt_loader),
+                ),
+                FilterStage(
+                    extractor=OpenAIFilterExtractor(prompt_loader=prompt_loader),
+                ),
+                SearchStage(
+                    retriever=retriever,
+                ),
+            ],
+        )
+
         chat = ChatService(
-            retriever=retriever,
+            query_pipeline=query_pipeline,
             context_builder=ContextBuilder(),
             llm_provider=OpenAILLM(),
             prompt_builder=prompt_loader,
             memory=memory,
-            query_rewriter=query_rewriter,
-            filter_extractor=OpenAIFilterExtractor(
-                prompt_loader=prompt_loader
-            ),
         )
 
         while await chat.ask():

@@ -68,18 +68,30 @@ class FilterTrace:
 
 
 @dataclass(slots=True)
+class QueryTrace:
+    """Everything the query pipeline records.
+
+    Stages receive only this, so a stage cannot reach into the answer-side
+    tracing that RAGService owns.
+    """
+
+    rewrite: RewriteTrace = field(default_factory=RewriteTrace)
+
+    filter: FilterTrace = field(default_factory=FilterTrace)
+
+    retrieval: RetrievalTrace = field(default_factory=RetrievalTrace)
+
+
+@dataclass(slots=True)
 class RAGTrace:
 
     question: str
 
-    retrieval: RetrievalTrace = field(default_factory=RetrievalTrace)
+    # written by the query pipeline, not by RAGService
+    query: QueryTrace = field(default_factory=QueryTrace)
 
     context: list[ContextDocument] = field(default_factory=list)
 
     prompt: PromptTrace = field(default_factory=PromptTrace)
 
     llm: LLMTrace = field(default_factory=LLMTrace)
-
-    rewrite: RewriteTrace = field(default_factory= RewriteTrace)
-
-    filter: FilterTrace = field(default_factory= FilterTrace)
