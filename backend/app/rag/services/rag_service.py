@@ -7,11 +7,13 @@ from app.rag.memory.schemas import ChatMessage, MessageRole
 from app.rag.prompts.loader import PromptTemplateLoader
 from app.rag.retrievers.base import BaseRetriever
 from app.rag.query_rewriter.schemas import RewriteResult
+from app.rag.filtering.schemas import FilterResult, SearchFilters
 from app.rag.services.schema import RAGResponse
 from app.rag.tracing.schema import PromptTrace, RAGTrace
 from app.rag.tracing.printer import TracePrinter
 from app.rag.tracing.timer import Timer
 from app.rag.query_rewriter.base import BaseQueryRewriter
+from app.rag.filtering.base import BaseFilterExtractor
 
 ANSWER_TEMPLATE = "answer.j2"
 
@@ -35,6 +37,8 @@ class RAGService:
 
         query_rewriter: BaseQueryRewriter | None = None,
 
+        filter_extractor: BaseFilterExtractor | None = None
+
     ) -> None:
 
         self.retriever = retriever
@@ -48,6 +52,9 @@ class RAGService:
 
         # rewriter for query optimisation
         self.query_rewriter = query_rewriter
+
+        # filter for the query
+        self.filter_extractor = filter_extractor
 
     async def ask (self, question: str) -> RAGResponse:
 
@@ -80,13 +87,32 @@ class RAGService:
         trace.rewrite.rewritten_query = rewrite.rewritten_query
         trace.rewrite.used_history = rewrite.used_history
 
-        # the rewritten query is what actually gets searched
-        trace.retrieval.query = rewrite.rewritten_query
+        # extract filters from th query 
+        filtered_query = FilterResult(
+            query=rewrite.rewritten_query,
+            filters= SearchFilters()
+        )
+
+        if self.filter_extractor:
+            timer = Timer()
+
+            filtered_query = await self.filter_extractor.extract(
+                query=rewrite.rewritten_query
+            )
+
+            trace.filter.duration_ms = timer.elapsed_ms()
+
+        trace.filter.query = filtered_query.query
+        trace.filter.filters = filtered_query.filters
+
+        # the filter-stripped query is what actually gets searched
+        trace.retrieval.query = filtered_query.query
 
         timer = Timer()
 
         results = await self.retriever.search(
-            query = rewrite.rewritten_query,
+            query = filtered_query.query,
+            filters = filtered_query.filters,
             trace = trace.retrieval,
         )
 
