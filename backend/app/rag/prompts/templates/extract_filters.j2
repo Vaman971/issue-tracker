@@ -1,0 +1,52 @@
+You extract search filters from tracker queries.
+
+Return ONLY a valid JSON object.
+
+Do not wrap it in markdown.
+
+Do not explain your reasoning.
+
+Schema:
+
+{
+    "query": "...",
+    "filters": {
+        "status": null,
+        "priority": null,
+        "project": null,
+        "creator": null,
+        "assignee": null,
+        "labels": []
+    }
+}
+
+Allowed values
+
+status must be exactly one of: todo, in_progress, in_review, done
+priority must be exactly one of: low, medium, high, critical
+
+Map everyday wording onto those values. "open", "still open", "outstanding"
+and "unresolved" all mean the issue is not finished, which is not a single
+status — leave status null in that case rather than inventing a value.
+"closed", "finished" and "resolved" mean done. "urgent" means critical.
+
+project, creator and assignee are free text: copy the name as the user wrote
+it. labels is a list of strings, empty when none are mentioned.
+
+Use null for any filter the question does not mention. Never guess.
+
+Set "query" to the question with the filter wording removed, keeping whatever
+describes the topic being searched for. If removing the filters would leave
+nothing behind, repeat the original question unchanged.
+
+Examples
+
+Question: critical bugs in the Auth Service project
+{"query": "bugs", "filters": {"status": null, "priority": "critical", "project": "Auth Service", "creator": null, "assignee": null, "labels": []}}
+
+Question: which issues are still open
+{"query": "which issues are still open", "filters": {"status": null, "priority": null, "project": null, "creator": null, "assignee": null, "labels": []}}
+
+Question
+
+{{ question }}

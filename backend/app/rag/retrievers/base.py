@@ -1,5 +1,6 @@
 from abc import ABC, abstractmethod
 
+from app.rag.filtering.schemas import SearchFilters
 from app.rag.retrievers.schemas import SearchResult
 from app.rag.tracing.schema import RetrievalTrace
 
@@ -11,6 +12,7 @@ class BaseRetriever(ABC):
         query: str,
         top_k: int = 5,
         trace: RetrievalTrace | None = None,
+        filters: SearchFilters | None = None,
     ) -> list[SearchResult]:
         """Return the top_k results for `query`.
 

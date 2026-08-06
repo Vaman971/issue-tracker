@@ -1,3 +1,5 @@
+from dataclasses import asdict
+
 from app.rag.tracing.schema import RAGTrace
 from app.rag.tracing.timer import format_ms
 
@@ -34,6 +36,18 @@ class TracePrinter:
         print(_row("History used", trace.rewrite.used_history))
         print()
         print(_row("Time", format_ms(trace.rewrite.duration_ms)))
+        print()
+
+        _heading("FILTER")
+        print(_row("Search Query", trace.filter.query))
+        applied = {
+            name: value
+            for name, value in asdict(trace.filter.filters).items()
+            if value
+        }
+        print(_row("Filters", applied or "none"))
+        print()
+        print(_row("Time", format_ms(trace.filter.duration_ms)))
         print()
 
         _heading("RETRIEVAL")

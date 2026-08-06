@@ -2,6 +2,8 @@ from sqlalchemy import select, func, desc
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.rag_document import RagDocument
+from app.rag.filtering.conditions import build_conditions
+from app.rag.filtering.schemas import SearchFilters
 
 class RagDocumentRepository:
     def __init__(
@@ -32,10 +34,11 @@ class RagDocumentRepository:
     async def keyword_search(
             self,
             query: str,
-            limit: int
+            limit: int,
+            filters: SearchFilters | None = None,
     ):
         stmt = (
-            select(RagDocument, 
+            select(RagDocument,
                    func.ts_rank(
                        func.to_tsvector("english", RagDocument.content),
                        func.plainto_tsquery(query)
@@ -44,7 +47,8 @@ class RagDocumentRepository:
                 func.to_tsvector(
                     "english",
                     RagDocument.content,
-                ).op("@@")(func.plainto_tsquery(query))
+                ).op("@@")(func.plainto_tsquery(query)),
+                *build_conditions(filters),
             )
             .order_by(desc("rank"))
             .limit(limit)

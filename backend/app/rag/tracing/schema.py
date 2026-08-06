@@ -2,6 +2,7 @@ from dataclasses import dataclass, field
 
 from app.rag.context.schemas import ContextDocument
 from app.rag.retrievers.schemas import SearchResult
+from app.rag.filtering.schemas import SearchFilters
 
 
 @dataclass(slots=True)
@@ -54,6 +55,17 @@ class RewriteTrace:
 
     duration_ms: float = 0.0
 
+@dataclass(slots=True)
+class FilterTrace:
+
+    query: str = ""
+
+    filters: SearchFilters = field(
+        default_factory=SearchFilters,
+    )
+
+    duration_ms: float = 0
+
 
 @dataclass(slots=True)
 class RAGTrace:
@@ -69,3 +81,5 @@ class RAGTrace:
     llm: LLMTrace = field(default_factory=LLMTrace)
 
     rewrite: RewriteTrace = field(default_factory= RewriteTrace)
+
+    filter: FilterTrace = field(default_factory= FilterTrace)

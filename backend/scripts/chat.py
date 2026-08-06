@@ -10,10 +10,11 @@ from app.rag.context.context_builder import ContextBuilder
 from app.rag.prompts.loader import PromptTemplateLoader
 from app.rag.llm.openai_llm import OpenAILLM
 from app.rag.query_rewriter.openai_rewriter import OpenAIQueryRewriter
+from app.rag.filtering.filter_extractor import OpenAIFilterExtractor
 
 
 class ChatService:
-    def __init__(self, retriever: HybridRetriever, context_builder: ContextBuilder, llm_provider: OpenAILLM, prompt_builder: PromptTemplateLoader, memory: InMemoryMemory, query_rewriter: OpenAIQueryRewriter) -> None:
+    def __init__(self, retriever: HybridRetriever, context_builder: ContextBuilder, llm_provider: OpenAILLM, prompt_builder: PromptTemplateLoader, memory: InMemoryMemory, query_rewriter: OpenAIQueryRewriter, filter_extractor: OpenAIFilterExtractor) -> None:
 
         # build the RAG pipeline once, reuse it for every question;
         # it owns the conversation history for the whole session
@@ -24,6 +25,7 @@ class ChatService:
             llm=llm_provider,
             memory=memory,
             query_rewriter=query_rewriter,
+            filter_extractor=filter_extractor,
         )
 
 
@@ -68,7 +70,10 @@ async def main() -> None:
             llm_provider=OpenAILLM(),
             prompt_builder=prompt_loader,
             memory=memory,
-            query_rewriter=query_rewriter
+            query_rewriter=query_rewriter,
+            filter_extractor=OpenAIFilterExtractor(
+                prompt_loader=prompt_loader
+            ),
         )
 
         while await chat.ask():

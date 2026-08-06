@@ -2,6 +2,7 @@ from app.rag.retrievers.base import BaseRetriever
 from app.rag.retrievers.pgvector_retriever import PGVectorRetriever
 from app.rag.repositories.rag_document_repository import RagDocumentRepository
 
+from app.rag.filtering.schemas import SearchFilters
 from app.rag.retrievers.schemas import SearchResult
 from app.rag.tracing.schema import RetrievalTrace
 
@@ -17,15 +18,18 @@ class HybridRetriever(BaseRetriever):
         query: str,
         top_k: int = 5,
         trace: RetrievalTrace | None = None,
+        filters: SearchFilters | None = None,
     ) -> list[SearchResult]:
         semantic = await self.vector.search(
             query=query,
-            top_k=top_k
+            top_k=top_k,
+            filters=filters,
         )
 
         rows = await self.repository.keyword_search(
             query,
-            limit=top_k
+            limit=top_k,
+            filters=filters,
         )
 
         # ts_rank is the keyword relevance score; the ORM row itself has none
