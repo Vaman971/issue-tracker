@@ -1,0 +1,39 @@
+from app.rag.query_pipeline.stages.base import BaseQueryStage
+from app.rag.query_pipeline.base import BaseQueryPipeline
+from app.rag.filtering.schemas import SearchFilters
+from app.rag.query_pipeline.schemas import ProcessedQuery
+from app.rag.query_pipeline.schemas import QueryRequest
+from app.rag.tracing.schema import QueryTrace
+
+
+class QueryPipeline(BaseQueryPipeline):
+
+    def __init__(
+        self,
+        stages: list[BaseQueryStage],
+    ):
+
+        self.stages = stages
+
+    async def process(
+        self,
+        request: QueryRequest,
+        trace: QueryTrace,
+    ) -> ProcessedQuery:
+
+        processed = ProcessedQuery(
+            original_query=request.question,
+            rewritten_query=request.question,
+            search_query=request.question,
+            filters=SearchFilters(),
+        )
+
+        for stage in self.stages:
+
+            processed = await stage.process(
+                request=request,
+                processed=processed,
+                trace=trace,
+            )
+
+        return processed
