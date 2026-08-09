@@ -1,4 +1,5 @@
-from sqlalchemy import select, func, desc
+from sqlalchemy import select, func, desc, cast, Text
+from sqlalchemy.dialects.postgresql import TSQUERY
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.rag_document import RagDocument
@@ -37,17 +38,29 @@ class RagDocumentRepository:
             limit: int,
             filters: SearchFilters | None = None,
     ):
+        # plainto_tsquery ANDs every term, so one word the corpus never uses
+        # ("still", "started") drops the whole match to zero. Swapping the
+        # operator to OR lets ts_rank order by how many terms hit instead.
+        ts_query = cast(
+            func.replace(
+                cast(func.plainto_tsquery(query), Text),
+                "&",
+                "|",
+            ),
+            TSQUERY,
+        )
+
         stmt = (
             select(RagDocument,
                    func.ts_rank(
                        func.to_tsvector("english", RagDocument.content),
-                       func.plainto_tsquery(query)
+                       ts_query
                    ).label("rank"))
             .where (
                 func.to_tsvector(
                     "english",
                     RagDocument.content,
-                ).op("@@")(func.plainto_tsquery(query)),
+                ).op("@@")(ts_query),
                 *build_conditions(filters),
             )
             .order_by(desc("rank"))

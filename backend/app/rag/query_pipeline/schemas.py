@@ -17,7 +17,7 @@ class ProcessedQuery:
 
     rewritten_query: str
 
-    search_query: str
+    search_queries: list[str] # for multi query retrieval
 
     filters: SearchFilters
 

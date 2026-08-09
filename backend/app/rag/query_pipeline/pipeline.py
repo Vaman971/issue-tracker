@@ -24,11 +24,17 @@ class QueryPipeline(BaseQueryPipeline):
         processed = ProcessedQuery(
             original_query=request.question,
             rewritten_query=request.question,
-            search_query=request.question,
+            search_queries=[request.question],
             filters=SearchFilters(),
         )
 
         for stage in self.stages:
+
+            if not await stage.should_run(
+                request=request,
+                processed=processed
+            ):
+                continue
 
             processed = await stage.process(
                 request=request,

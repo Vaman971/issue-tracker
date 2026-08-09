@@ -8,7 +8,7 @@ from app.rag.filtering.schemas import SearchFilters
 @dataclass(slots=True)
 class RetrievalTrace:
 
-    query: str = ""
+    query: list[str] = field(default_factory=list)
 
     semantic_results: list[SearchResult] = field(default_factory=list)
 
@@ -55,6 +55,12 @@ class RewriteTrace:
 
     duration_ms: float = 0.0
 
+    # these defaults describe the skip; process() clears `skipped` when the
+    # stage actually runs, so a stage the pipeline never called stays marked
+    skipped: bool = True
+
+    skip_reason: str = "No conversation history"
+
 @dataclass(slots=True)
 class FilterTrace:
 
@@ -68,6 +74,18 @@ class FilterTrace:
 
 
 @dataclass(slots=True)
+class MultiQueryTrace:
+
+    alternatives: list[str] = field(default_factory=list)
+
+    duration_ms: float = 0.0
+
+    skipped: bool = True
+
+    skip_reason: str = "Specific entity lookup"
+
+
+@dataclass(slots=True)
 class QueryTrace:
     """Everything the query pipeline records.
 
@@ -78,6 +96,8 @@ class QueryTrace:
     rewrite: RewriteTrace = field(default_factory=RewriteTrace)
 
     filter: FilterTrace = field(default_factory=FilterTrace)
+
+    multi_query: MultiQueryTrace = field(default_factory=MultiQueryTrace)
 
     retrieval: RetrievalTrace = field(default_factory=RetrievalTrace)
 

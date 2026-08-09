@@ -20,6 +20,14 @@ class RewriteStage(BaseQueryStage):
     ):
         self.rewriter = rewriter
 
+    async def should_run(
+        self,
+        request: QueryRequest,
+        processed: ProcessedQuery,
+    ) -> bool:
+
+        return bool(request.history.strip())
+
     async def process(
         self,
         request: QueryRequest,
@@ -27,15 +35,15 @@ class RewriteStage(BaseQueryStage):
         trace: QueryTrace,
     ) -> ProcessedQuery:
 
-        # with no history there is nothing to resolve, so skip the rewrite
-        # rather than pay an LLM call to get the question back unchanged
+        trace.rewrite.skipped = False
+
         rewrite = RewriteResult(
             original_query=request.question,
             rewritten_query=request.question,
             used_history=False,
         )
 
-        if self.rewriter and request.history:
+        if self.rewriter:
 
             timer = Timer()
 
@@ -49,7 +57,7 @@ class RewriteStage(BaseQueryStage):
         processed.rewritten_query = rewrite.rewritten_query
 
         # later stages narrow this further; until then it is what gets searched
-        processed.search_query = rewrite.rewritten_query
+        processed.search_queries = [rewrite.rewritten_query]
 
         trace.rewrite.original_query = rewrite.original_query
         trace.rewrite.rewritten_query = rewrite.rewritten_query

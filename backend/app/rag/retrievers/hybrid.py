@@ -3,10 +3,9 @@ from app.rag.retrievers.pgvector_retriever import PGVectorRetriever
 from app.rag.repositories.rag_document_repository import RagDocumentRepository
 
 from app.rag.filtering.schemas import SearchFilters
+from app.rag.retrievers.rrf import fuse
 from app.rag.retrievers.schemas import SearchResult
 from app.rag.tracing.schema import RetrievalTrace
-
-from collections import defaultdict
 
 class HybridRetriever(BaseRetriever):
     def __init__(self, vector_retriever: PGVectorRetriever, rag_repository: RagDocumentRepository) -> None:
@@ -20,6 +19,7 @@ class HybridRetriever(BaseRetriever):
         trace: RetrievalTrace | None = None,
         filters: SearchFilters | None = None,
     ) -> list[SearchResult]:
+
         semantic = await self.vector.search(
             query=query,
             top_k=top_k,
@@ -46,45 +46,11 @@ class HybridRetriever(BaseRetriever):
         ]
 
         if trace is not None:
-            trace.semantic_results = semantic
-            trace.keyword_results = keyword
+            # extend, not assign: the search stage calls this once per query
+            trace.semantic_results.extend(semantic)
+            trace.keyword_results.extend(keyword)
 
-        K = 60  # RRF dampening constant
-
-        results: dict[tuple, SearchResult] = {}
-        rrf_score: dict[tuple, float] = defaultdict(float)
-
-        # RRF uses the RANK (1-based position), not the raw score
-        for rank, result in enumerate(semantic, start=1):
-
-            # if in case the semantic search appears twice, it will fall only once to its respective key
-            key = (
-                result.entity_type,
-                result.entity_id,
-                result.chunk_index
-            ) # build a KEY that is a tuple of 3 fields
-
-            results[key] = result
-            rrf_score[key] += 1 / (K + rank)
-
-        for rank, result in enumerate(keyword, start=1):
-            key = (
-                result.entity_type,
-                result.entity_id,
-                result.chunk_index,
-            )
-
-            # keep the semantic hit if this key was already seen
-            results.setdefault(key, result)
-            rrf_score[key] += 1 / (K + rank)
-
-        sorted_keys = sorted(
-            rrf_score,
-            key=lambda key: rrf_score[key],
-            reverse=True
-        )
-
-        merged = [results[key] for key in sorted_keys[:top_k]]
+        merged = fuse([semantic, keyword], top_k=top_k)
 
         if trace is not None:
             trace.final_results = merged

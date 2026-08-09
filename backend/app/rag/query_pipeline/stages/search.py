@@ -1,5 +1,7 @@
 from app.rag.query_pipeline.stages.base import BaseQueryStage
 from app.rag.retrievers.base import BaseRetriever
+from app.rag.retrievers.rrf import fuse
+from app.rag.retrievers.schemas import SearchResult
 from app.rag.tracing.timer import Timer
 from app.rag.tracing.schema import QueryTrace
 
@@ -16,8 +18,10 @@ class SearchStage(BaseQueryStage):
     def __init__(
         self,
         retriever: BaseRetriever,
+        top_k: int = 5,
     ):
         self.retriever = retriever
+        self.top_k = top_k
 
     async def process(
         self,
@@ -26,16 +30,26 @@ class SearchStage(BaseQueryStage):
         trace: QueryTrace,
     ) -> ProcessedQuery:
 
-        # the filter-stripped query is what actually gets searched
-        trace.retrieval.query = processed.search_query
+        # every query the earlier stages produced gets searched
+        trace.retrieval.query = processed.search_queries
 
         timer = Timer()
 
-        results = await self.retriever.search(
-            query=processed.search_query,
-            filters=processed.filters,
-            trace=trace.retrieval,
-        )
+        # one ranked list per query; RRF then fuses them into a single ranking
+        ranked_lists: list[list[SearchResult]] = []
+
+        for text in processed.search_queries:
+
+            ranked_lists.append(
+                await self.retriever.search(
+                    query=text,
+                    top_k=self.top_k,
+                    filters=processed.filters,
+                    trace=trace.retrieval,
+                )
+            )
+
+        results = fuse(ranked_lists, top_k=self.top_k)
 
         trace.retrieval.duration_ms = timer.elapsed_ms()
 
