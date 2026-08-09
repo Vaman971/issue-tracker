@@ -14,7 +14,9 @@ from app.rag.filtering.filter_extractor import OpenAIFilterExtractor
 from app.rag.query_pipeline.pipeline import QueryPipeline
 from app.rag.query_pipeline.stages.rewrite import RewriteStage
 from app.rag.query_pipeline.stages.filter import FilterStage
+from app.rag.query_pipeline.stages.multi_query import MultiQueryStage
 from app.rag.query_pipeline.stages.search import SearchStage
+from app.rag.multi_query.openai_multi_query import OpenAIQueryExpander
 
 
 class ChatService:
@@ -70,6 +72,9 @@ async def main() -> None:
                 ),
                 FilterStage(
                     extractor=OpenAIFilterExtractor(prompt_loader=prompt_loader),
+                ),
+                MultiQueryStage(
+                    expander=OpenAIQueryExpander(prompt_loader=prompt_loader),
                 ),
                 SearchStage(
                     retriever=retriever,

@@ -9,8 +9,8 @@ from app.rag.query_pipeline.schemas import QueryRequest, ProcessedQuery
 class FilterStage(BaseQueryStage):
     """Pulls structured filters out of the query so retrieval can narrow on them.
 
-    "critical bugs not started yet" becomes the search text "bugs" plus
-    filters for priority and status.
+    "critical bugs not started yet" yields filters for priority and status.
+    The query itself is left alone — this stage only produces filters.
     """
 
     def __init__(
@@ -43,9 +43,8 @@ class FilterStage(BaseQueryStage):
 
             trace.filter.duration_ms = timer.elapsed_ms()
 
-        # the filter-stripped text is what retrieval searches on; rewritten_query
-        # stays as the rewrite stage left it
-        processed.search_query = filtered_query.query
+        # filters only — search_queries stays as the rewrite stage left it, so
+        # a mis-behaving extractor cannot damage what actually gets searched
         processed.filters = filtered_query.filters
 
         trace.filter.query = filtered_query.query

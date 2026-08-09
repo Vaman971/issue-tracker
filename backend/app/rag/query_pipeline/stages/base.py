@@ -16,3 +16,14 @@ class BaseQueryStage(ABC):
         trace: QueryTrace,
     ) -> ProcessedQuery:
         raise NotImplementedError
+
+    async def should_run(
+        self,
+        request: QueryRequest,
+        processed: ProcessedQuery,
+    ) -> bool:
+        """
+        Default behaviour:
+        every stage runs.
+        """
+        return True

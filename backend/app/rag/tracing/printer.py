@@ -31,12 +31,16 @@ class TracePrinter:
         print()
 
         _heading("REWRITE")
-        print(_row("Original Query", trace.query.rewrite.original_query))
-        print(_row("Rewritten Query", trace.query.rewrite.rewritten_query))
-        print(_row("History used", trace.query.rewrite.used_history))
-        print()
-        print(_row("Time", format_ms(trace.query.rewrite.duration_ms)))
-        print()
+        if trace.query.rewrite.skipped:
+            print(_row("Skipped", trace.query.rewrite.skip_reason))
+            print()
+        else:
+            print(_row("Original Query", trace.query.rewrite.original_query))
+            print(_row("Rewritten Query", trace.query.rewrite.rewritten_query))
+            print(_row("History used", trace.query.rewrite.used_history))
+            print()
+            print(_row("Time", format_ms(trace.query.rewrite.duration_ms)))
+            print()
 
         _heading("FILTER")
         print(_row("Search Query", trace.query.filter.query))
@@ -49,6 +53,19 @@ class TracePrinter:
         print()
         print(_row("Time", format_ms(trace.query.filter.duration_ms)))
         print()
+
+        _heading("MULTI QUERY")
+        if trace.query.multi_query.skipped:
+            print(_row("Skipped", trace.query.multi_query.skip_reason))
+            print()
+        else:
+            for index, alternative in enumerate(trace.query.multi_query.alternatives, start=1):
+                print(_row(f"Alternative {index}", alternative))
+            if not trace.query.multi_query.alternatives:
+                print(_row("Alternatives", "none"))
+            print()
+            print(_row("Time", format_ms(trace.query.multi_query.duration_ms)))
+            print()
 
         _heading("RETRIEVAL")
         print(_row("Semantic Results", len(trace.query.retrieval.semantic_results)))

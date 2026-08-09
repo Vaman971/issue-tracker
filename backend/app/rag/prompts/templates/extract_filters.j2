@@ -35,14 +35,15 @@ it. labels is a list of strings, empty when none are mentioned.
 
 Use null for any filter the question does not mention. Never guess.
 
-Set "query" to the question with the filter wording removed, keeping whatever
-describes the topic being searched for. If removing the filters would leave
-nothing behind, repeat the original question unchanged.
+Copy "query" from the question exactly as written. Do not remove the filter
+wording, shorten it, or reword it. The filters decide which records are
+searched; the full question is what ranks them within that set, so it needs
+every word of the original meaning.
 
 Examples
 
 Question: critical bugs in the Auth Service project
-{"query": "bugs", "filters": {"status": null, "priority": "critical", "project": "Auth Service", "creator": null, "assignee": null, "labels": []}}
+{"query": "critical bugs in the Auth Service project", "filters": {"status": null, "priority": "critical", "project": "Auth Service", "creator": null, "assignee": null, "labels": []}}
 
 Question: which issues are still open
 {"query": "which issues are still open", "filters": {"status": null, "priority": null, "project": null, "creator": null, "assignee": null, "labels": []}}
