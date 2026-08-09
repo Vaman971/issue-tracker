@@ -34,7 +34,16 @@ class DocumentBuilder():
             else "Unassigned"
         )
 
+        search_terms = (
+            ", ".join(issue.search_terms)
+            if issue.search_terms
+            else "None"
+        )
+
         return f"""
+            Issue
+            =====
+
             Issue ID:
             {issue.id}
 
@@ -61,4 +70,7 @@ class DocumentBuilder():
 
             Labels:
             {labels}
+
+            Search Item: 
+            {search_terms}
             """.strip()

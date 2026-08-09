@@ -11,7 +11,7 @@ from app.rag.embeddings.openai_embedder import OpenAiEmbedder
 from app.rag.mappers.issue_mapper import IssueMapper
 from app.rag.repositories.issue_repository import IssueRepository
 from app.rag.repositories.rag_document_repository import RagDocumentRepository
-from backend.app.rag.services.ingestion.schemas import PreparedIssue
+from app.rag.services.ingestion.schemas import PreparedIssue
 from app.rag.vector_store.pgvector_store import PGVectorStore
 
 class IngestionService:
@@ -41,9 +41,9 @@ class IngestionService:
 
         async def worker(
                 issue: Issue,
-        )-> None:
+        )-> PreparedIssue | None:
             async with semaphore:
-                await self._prepare_issue(issue)
+                return await self._prepare_issue(issue)
 
         # Run a worker coroutine for each issue concurrently and wait for all to finish.
         # asyncio.gather schedules all the provided coroutines to run in parallel
@@ -54,11 +54,11 @@ class IngestionService:
             *(worker(issue) for issue in issues)
         )
 
-        for issue in prepared:
-            if issue is None:
+        for prepared_issue in prepared:
+            if prepared_issue is None:
                 continue
 
-            await self._persist_issue(issue)
+            await self._persist_issue(prepared_issue)
 
         await self.session.commit()
 
@@ -103,8 +103,6 @@ class IngestionService:
         if not needs_reindex:
             print( f"Skipping Issue {issue.id}: unchanged.")
             return
-        
-        print(f"Re-indexing Issue {issue.id}")
 
         chunks = self.chunker.chunk(text)
 
