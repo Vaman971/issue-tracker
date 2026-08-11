@@ -7,6 +7,7 @@ from app.core.config import settings
 from app.models.issue import Issue
 from app.rag.builders.document_builder import DocumentBuilder
 from app.rag.chunkers.fixed import FixedChunker
+from app.rag.chunkers.semantic import SemanticChunker
 from app.rag.embeddings.openai_embedder import OpenAiEmbedder
 from app.rag.mappers.issue_mapper import IssueMapper
 from app.rag.repositories.issue_repository import IssueRepository
@@ -24,8 +25,8 @@ class IngestionService:
         self.rag_repository = RagDocumentRepository(session)
         self.mapper = IssueMapper()
         self.builder = DocumentBuilder()
-        self.chunker = FixedChunker()
         self.embedder = OpenAiEmbedder()
+        self.chunker = SemanticChunker(embedder=self.embedder)
         self.vector_store = PGVectorStore(session)
         self.session = session
 
@@ -104,7 +105,7 @@ class IngestionService:
             print( f"Skipping Issue {issue.id}: unchanged.")
             return
 
-        chunks = self.chunker.chunk(text)
+        chunks = await self.chunker.chunk(text)
 
         # send all the chunks of an issue at once for embedding, this reduces no. of network calls
         embeddings = await self.embedder.embed_many(chunks)

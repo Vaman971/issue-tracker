@@ -6,7 +6,7 @@ class BaseChunker(ABC):
     """ Base interface for all chunking strategies. """
 
     @abstractmethod
-    def chunk(
+    async def chunk(
         self,
         document: str,
     ) -> list[Chunk]:

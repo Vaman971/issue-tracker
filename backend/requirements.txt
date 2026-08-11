@@ -10,6 +10,9 @@ aiosqlite
 alembic
 pgvector
 
+# Mathematical computation
+numpy
+
 # Settings & validation
 pydantic-settings
 pydantic[email]
