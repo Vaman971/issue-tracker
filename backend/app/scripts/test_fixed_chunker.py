@@ -26,7 +26,7 @@ async def main():
             overlap=40,
         )
 
-        chunks = chunker.chunk(document)
+        chunks = await chunker.chunk(document)
 
         for chunk in chunks:
             print("=" * 80)

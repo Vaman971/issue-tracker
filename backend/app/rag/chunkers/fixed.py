@@ -15,7 +15,7 @@ class FixedChunker(BaseChunker):
         self.chunk_size = chunk_size
         self.overlap = overlap
     
-    def chunk(self, document: str) -> list[Chunk]:
+    async def chunk(self, document: str) -> list[Chunk]:
         chunks: list[Chunk] = []
 
         start = 0
