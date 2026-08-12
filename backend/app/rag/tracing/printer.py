@@ -75,6 +75,18 @@ class TracePrinter:
         print(_row("Time", format_ms(trace.query.retrieval.duration_ms)))
         print()
 
+        _heading("RERANK")
+        print(_row("Candidate count", trace.query.rerank.candidate_count))
+        print(_row("Final count", trace.query.rerank.final_count))
+        print()
+        print(_row("Model", trace.query.rerank.model))
+        print(_row("Input Tokens", trace.query.rerank.input_tokens))
+        print(_row("Output Tokens", trace.query.rerank.output_tokens))
+        print(_row("Reasoning Tokens", trace.query.rerank.reasoning_tokens))
+        print(_row("Cost", f"${trace.query.rerank.cost_usd:.4f}"))
+        print(_row("Time", format_ms(trace.query.rerank.duration_ms)))
+        print()
+
         _heading("LLM")
         print(_row("Model", trace.llm.model))
         print(_row("Input Tokens", trace.llm.input_tokens))

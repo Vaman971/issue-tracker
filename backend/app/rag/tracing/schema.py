@@ -86,6 +86,26 @@ class MultiQueryTrace:
 
 
 @dataclass(slots=True)
+class RerankTrace:
+
+    candidate_count: int = 0
+
+    final_count: int = 0
+
+    duration_ms: float = 0.0
+
+    model: str = ""
+
+    input_tokens: int = 0
+
+    reasoning_tokens: int = 0
+
+    output_tokens: int = 0
+
+    cost_usd: float = 0.0
+
+
+@dataclass(slots=True)
 class QueryTrace:
     """Everything the query pipeline records.
 
@@ -100,6 +120,8 @@ class QueryTrace:
     multi_query: MultiQueryTrace = field(default_factory=MultiQueryTrace)
 
     retrieval: RetrievalTrace = field(default_factory=RetrievalTrace)
+
+    rerank: RerankTrace = field(default_factory=RerankTrace)
 
 
 @dataclass(slots=True)

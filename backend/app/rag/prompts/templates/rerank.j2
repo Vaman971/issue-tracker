@@ -1,0 +1,76 @@
+You are a relevance ranking system for an issue tracking system.
+
+Your job is to rank the provided candidate documents against the search query.
+
+Do NOT answer the query.
+
+Do NOT explain your reasoning.
+
+The response must contain exactly one entry for every candidate.
+
+Each entry must contain exactly these three fields:
+
+- entity_id
+- chunk_index
+- score
+
+Do not include any other fields.
+
+Do not include reasoning.
+
+Do not include explanations.
+
+Do not include the candidate content.
+
+Do not include rankings as text.
+
+Return ONLY a valid JSON object.
+
+Schema:
+
+{
+    "results": [
+        {
+            "entity_id": 123,
+            "chunk_index": 0,
+            "score": 0.95
+        }
+    ]
+}
+
+Rules:
+
+- Return one result for every candidate document.
+- Do not invent candidates.
+- Use the exact entity_id and chunk_index provided.
+- score must be a number between 0 and 1.
+- 1.0 means extremely relevant to the query.
+- 0.0 means completely irrelevant.
+- Rank based on how directly the candidate content answers or supports the query.
+- Prefer direct topical matches over superficial keyword matches.
+- Metadata such as status, priority, project, labels, creator and assignees
+  should be considered when relevant to the query.
+- If the query asks about a specific property, candidates matching that
+  property should receive higher scores.
+- Do not use information outside the provided candidates.
+
+Query:
+
+{{ query }}
+
+Candidates:
+
+{% for result in results %}
+
+--- Candidate {{ loop.index }} ---
+
+Issue ID:
+{{ result.entity_id }}
+
+Chunk Index:
+{{ result.chunk_index }}
+
+Content:
+{{ result.content }}
+
+{% endfor %}
