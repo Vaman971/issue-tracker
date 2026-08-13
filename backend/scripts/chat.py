@@ -16,7 +16,9 @@ from app.rag.query_pipeline.stages.rewrite import RewriteStage
 from app.rag.query_pipeline.stages.filter import FilterStage
 from app.rag.query_pipeline.stages.multi_query import MultiQueryStage
 from app.rag.query_pipeline.stages.search import SearchStage
+from app.rag.query_pipeline.stages.rerank import RerankStage
 from app.rag.multi_query.openai_multi_query import OpenAIQueryExpander
+from app.rag.reranking.reranker import OpenAiReranker
 
 
 class ChatService:
@@ -78,6 +80,13 @@ async def main() -> None:
                 ),
                 SearchStage(
                     retriever=retriever,
+                    top_k=15
+                ),
+                RerankStage(
+                    reranker=OpenAiReranker(
+                        prompt_loader=PromptTemplateLoader(),
+                    ),
+                 top_k=5,
                 ),
             ],
         )

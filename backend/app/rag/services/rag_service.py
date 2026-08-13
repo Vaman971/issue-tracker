@@ -53,7 +53,7 @@ class RAGService:
         history = self.memory.messages() if self.memory else []
         formatted_history = self.memory_formatter.format(history)
 
-        # rewrite, filter and retrieval all happen here; the pipeline gets
+        # query processing happens here; the pipeline gets
         # only its own slice of the trace to write into
         processed = await self.query_pipeline.process(
             request=QueryRequest(
