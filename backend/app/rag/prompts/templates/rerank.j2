@@ -54,6 +54,22 @@ Rules:
   property should receive higher scores.
 - Do not use information outside the provided candidates.
 
+Relevance guidance:
+
+- Give the highest scores to candidates whose title or content directly
+  describes the problem asked about.
+- A candidate that explicitly mentions the queried concept and describes
+  the associated problem is more relevant than one that only shares a
+  related keyword.
+- A candidate that mentions the concept only incidentally should receive
+  a lower score.
+- Do not prefer a candidate merely because its metadata has a higher
+  priority or a more urgent status unless the query asks about priority,
+  status, or urgency.
+- When several candidates describe the same issue pattern, they may all
+  be highly relevant; distinguish them using the actual candidate content,
+  not their issue ID.
+
 Query:
 
 {{ query }}
@@ -64,11 +80,12 @@ Candidates:
 
 --- Candidate {{ loop.index }} ---
 
-Issue ID:
-{{ result.entity_id }}
+Issue ID: {{ result.entity_id }}
+Chunk Index: {{ result.chunk_index }}
 
-Chunk Index:
-{{ result.chunk_index }}
+Status: {{ result.status }}
+Project: {{ result.project }}
+Priority: {{ result.priority }}
 
 Content:
 {{ result.content }}

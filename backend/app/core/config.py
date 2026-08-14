@@ -74,6 +74,7 @@ class Settings(BaseSettings):
     OPENAI_EMBEDDING_MODEL: str = "text-embedding-3-small"
     OPENAI_EMBEDDING_CONCURRENCY: int = 10
     OPENAI_CHAT_MODEL: str = "gpt-5"
+    OPENAI_REASONING_EFFORT: str = "minimal"
 
     @field_validator(
         "DATABASE_URL",
