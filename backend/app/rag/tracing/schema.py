@@ -137,3 +137,5 @@ class RAGTrace:
     prompt: PromptTrace = field(default_factory=PromptTrace)
 
     llm: LLMTrace = field(default_factory=LLMTrace)
+
+    total_duration_ms: float = 0.0

@@ -47,6 +47,9 @@ class RAGService:
 
     async def ask (self, question: str) -> RAGResponse:
 
+        # To track total duration of a request
+        total_timer = Timer()
+
         trace = RAGTrace(question=question)
 
         # prior turns only — the current question is passed separately
@@ -115,6 +118,8 @@ class RAGService:
                     content=response.content,
                 )
             )
+
+        trace.total_duration_ms = total_timer.elapsed_ms()
 
         TracePrinter.print(trace)
 

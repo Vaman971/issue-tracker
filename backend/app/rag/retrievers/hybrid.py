@@ -1,3 +1,5 @@
+from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
+
 from app.rag.retrievers.base import BaseRetriever
 from app.rag.retrievers.pgvector_retriever import PGVectorRetriever
 from app.rag.repositories.rag_document_repository import RagDocumentRepository
@@ -8,9 +10,8 @@ from app.rag.retrievers.schemas import SearchResult
 from app.rag.tracing.schema import RetrievalTrace
 
 class HybridRetriever(BaseRetriever):
-    def __init__(self, vector_retriever: PGVectorRetriever, rag_repository: RagDocumentRepository) -> None:
-        self.vector = vector_retriever
-        self.repository = rag_repository
+    def __init__(self, session_factory: async_sessionmaker[AsyncSession]) -> None:
+        self.session_factory = session_factory
 
     async def search(
         self,
@@ -20,39 +21,46 @@ class HybridRetriever(BaseRetriever):
         filters: SearchFilters | None = None,
     ) -> list[SearchResult]:
 
-        semantic = await self.vector.search(
-            query=query,
-            top_k=top_k,
-            filters=filters,
-        )
+        async with self.session_factory() as session:
 
-        rows = await self.repository.keyword_search(
-            query,
-            limit=top_k,
-            filters=filters,
-        )
-
-        # ts_rank is the keyword relevance score; the ORM row itself has none
-        keyword = [
-            SearchResult(
-                entity_type=row.entity_type,
-                entity_id=row.entity_id,
-                chunk_index=row.chunk_index,
-                content=row.content,
-                score=ts_rank,
-                metadata=row.metadata_json,
+            vector_retriever = PGVectorRetriever(
+                session=session
             )
-            for row, ts_rank in rows
-        ]
 
-        if trace is not None:
-            # extend, not assign: the search stage calls this once per query
-            trace.semantic_results.extend(semantic)
-            trace.keyword_results.extend(keyword)
+            keyword_retriever = RagDocumentRepository(
+                session=session
+            )
 
-        merged = fuse([semantic, keyword], top_k=top_k)
+            semantic = await vector_retriever.search(
+                query=query,
+                top_k=top_k,
+                filters=filters,
+            )
 
-        if trace is not None:
-            trace.final_results = merged
+            rows = await keyword_retriever.keyword_search(
+                query,
+                limit=top_k,
+                filters=filters,
+            )
 
-        return merged
+            # ts_rank is the keyword relevance score; the ORM row itself has none
+            keyword = [
+                SearchResult(
+                    entity_type=row.entity_type,
+                    entity_id=row.entity_id,
+                    chunk_index=row.chunk_index,
+                    content=row.content,
+                    score=ts_rank,
+                    metadata=row.metadata_json,
+                )
+                for row, ts_rank in rows
+            ]
+
+            if trace is not None:
+                # extend, not assign: the search stage calls this once per query
+                trace.semantic_results.extend(semantic)
+                trace.keyword_results.extend(keyword)
+
+            merged = fuse([semantic, keyword], top_k=top_k)
+
+            return merged

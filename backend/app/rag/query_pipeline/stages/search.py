@@ -1,3 +1,5 @@
+import asyncio
+
 from app.rag.query_pipeline.stages.base import BaseQueryStage
 from app.rag.retrievers.base import BaseRetriever
 from app.rag.retrievers.rrf import fuse
@@ -38,16 +40,18 @@ class SearchStage(BaseQueryStage):
         # one ranked list per query; RRF then fuses them into a single ranking
         ranked_lists: list[list[SearchResult]] = []
 
-        for text in processed.search_queries:
-
-            ranked_lists.append(
-                await self.retriever.search(
-                    query=text,
-                    top_k=self.top_k,
-                    filters=processed.filters,
-                    trace=trace.retrieval,
-                )
+        tasks = [
+            self.retriever.search(
+                query=text,
+                top_k=self.top_k,
+                filters=processed.filters,
+                trace=trace.retrieval
             )
+
+            for text in processed.search_queries
+        ]
+
+        ranked_lists = await asyncio.gather(*tasks)
 
         results = fuse(ranked_lists, top_k=self.top_k)
 

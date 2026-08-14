@@ -1,12 +1,15 @@
 import json
 
 from openai import AsyncOpenAI
+from typing import cast, Any
 
 from app.core.config import settings
 from app.rag.prompts.loader import PromptTemplateLoader
 from app.rag.reranking.base import BaseReranker
 from app.rag.reranking.schemas import RerankResult, RerankResponse
 from app.rag.retrievers.schemas import SearchResult
+
+from app.rag.reranking.candidate import build_rerank_candidate
 
 RERANK_TEMPLATE = "rerank.j2"
 
@@ -44,15 +47,21 @@ class OpenAiReranker(BaseReranker):
                 results=[]
             )
 
+        candidates = [
+            build_rerank_candidate(result)
+            for result in results
+        ]
+
         prompt = self.prompt_loader.render(
             RERANK_TEMPLATE,
             query=query,
-            results=results
+            results=candidates
         )
 
         response = await self.client.responses.create(
             model=self.model,
-            input=prompt
+            input=prompt,
+            reasoning=cast(Any, {"effort": settings.OPENAI_REASONING_EFFORT})
         )
 
         payload = self._parse_response(

@@ -95,6 +95,10 @@ class TracePrinter:
         print(_row("Time", format_ms(trace.llm.duration_ms)))
         print()
 
+        _heading("TOTAL TIME")
+        print(_row("Total Time",format_ms(trace.total_duration_ms)))
+        print()
+
         _heading("ANSWER")
         print(trace.llm.answer)
         print()

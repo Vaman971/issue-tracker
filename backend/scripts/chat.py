@@ -4,8 +4,6 @@ from app.db.session import AsyncSessionLocal
 from app.rag.services.rag_service import RAGService
 from app.rag.memory.in_memory import InMemoryMemory
 from app.rag.retrievers.hybrid import HybridRetriever
-from app.rag.retrievers.pgvector_retriever import PGVectorRetriever
-from app.rag.repositories.rag_document_repository import RagDocumentRepository
 from app.rag.context.context_builder import ContextBuilder
 from app.rag.prompts.loader import PromptTemplateLoader
 from app.rag.llm.openai_llm import OpenAILLM
@@ -17,6 +15,7 @@ from app.rag.query_pipeline.stages.filter import FilterStage
 from app.rag.query_pipeline.stages.multi_query import MultiQueryStage
 from app.rag.query_pipeline.stages.search import SearchStage
 from app.rag.query_pipeline.stages.rerank import RerankStage
+from app.rag.query_pipeline.stages.entity_consolidation import EntityConsolidationStage
 from app.rag.multi_query.openai_multi_query import OpenAIQueryExpander
 from app.rag.reranking.reranker import OpenAiReranker
 
@@ -52,55 +51,56 @@ class ChatService:
 
 
 async def main() -> None:
-    # one DB session for the whole chat session
-    async with AsyncSessionLocal() as session:
 
-        memory = InMemoryMemory()
+    memory = InMemoryMemory()
 
-        # one loader shared by the answer and rewrite templates
-        prompt_loader = PromptTemplateLoader()
+    # one loader shared by the answer and rewrite templates
+    prompt_loader = PromptTemplateLoader()
 
-        retriever = HybridRetriever(
-            vector_retriever=PGVectorRetriever(session),
-            rag_repository=RagDocumentRepository(session),
-        )
+    # multiple db sessions for each request
+    retriever = HybridRetriever(
+        session_factory=AsyncSessionLocal
+    )
 
-        # question in, searched-for documents out — order matters, each stage
-        # narrows what the next one works with
-        query_pipeline = QueryPipeline(
-            stages=[
-                RewriteStage(
-                    rewriter=OpenAIQueryRewriter(prompt_loader=prompt_loader),
+    # question in, searched-for documents out — order matters, each stage
+    # narrows what the next one works with
+    query_pipeline = QueryPipeline(
+        stages=[
+            RewriteStage(
+                rewriter=OpenAIQueryRewriter(prompt_loader=prompt_loader),
+            ),
+            FilterStage(
+                extractor=OpenAIFilterExtractor(prompt_loader=prompt_loader),
+            ),
+            MultiQueryStage(
+                expander=OpenAIQueryExpander(prompt_loader=prompt_loader),
+            ),
+            SearchStage(
+                retriever=retriever,
+                top_k=15
+            ),
+            RerankStage(
+                reranker=OpenAiReranker(
+                    prompt_loader=PromptTemplateLoader(),
                 ),
-                FilterStage(
-                    extractor=OpenAIFilterExtractor(prompt_loader=prompt_loader),
-                ),
-                MultiQueryStage(
-                    expander=OpenAIQueryExpander(prompt_loader=prompt_loader),
-                ),
-                SearchStage(
-                    retriever=retriever,
-                    top_k=15
-                ),
-                RerankStage(
-                    reranker=OpenAiReranker(
-                        prompt_loader=PromptTemplateLoader(),
-                    ),
-                 top_k=5,
-                ),
-            ],
-        )
+                top_k=10,
+            ),
+            EntityConsolidationStage(
+                top_k=5,
+            ),
+        ],
+    )
 
-        chat = ChatService(
-            query_pipeline=query_pipeline,
-            context_builder=ContextBuilder(),
-            llm_provider=OpenAILLM(),
-            prompt_builder=prompt_loader,
-            memory=memory,
-        )
+    chat = ChatService(
+        query_pipeline=query_pipeline,
+        context_builder=ContextBuilder(),
+        llm_provider=OpenAILLM(),
+        prompt_builder=prompt_loader,
+        memory=memory,
+    )
 
-        while await chat.ask():
-            pass
+    while await chat.ask():
+        pass
 
 
 if __name__ == "__main__":
