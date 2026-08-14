@@ -3,6 +3,7 @@ from app.rag.prompts.loader import PromptTemplateLoader
 from app.rag.filtering.schemas import FilterResult, SearchFilters
 from app.core.config import settings
 
+from typing import cast, Any
 from openai import AsyncOpenAI
 import json
 
