@@ -9,16 +9,24 @@ Appearing partway down several lists beats topping exactly one.
 """
 
 from collections import defaultdict
+from dataclasses import replace
 
+from app.core.config import settings
 from app.rag.retrievers.schemas import SearchResult
 
-K = 60  # RRF dampening constant
+K = settings.DAMPING_CONSTANT  # RRF dampening constant
 
 
 def fuse(
     ranked_lists: list[list[SearchResult]],
     top_k: int = 5,
+    k: int = K,
 ) -> list[SearchResult]:
+    """Fuse ranked lists. `k` dampens how much rank position matters.
+
+    A smaller k spreads scores across ranks, so being first in one list
+    counts for more relative to appearing low in two.
+    """
 
     results: dict[tuple, SearchResult] = {}
     rrf_score: dict[tuple, float] = defaultdict(float)
@@ -36,7 +44,7 @@ def fuse(
 
             # first list to produce a key keeps its copy of the document
             results.setdefault(key, result)
-            rrf_score[key] += 1 / (K + rank)
+            rrf_score[key] += 1 / (k + rank)
 
     sorted_keys = sorted(
         rrf_score,
@@ -44,4 +52,20 @@ def fuse(
         reverse=True,
     )
 
-    return [results[key] for key in sorted_keys[:top_k]]
+    # return [results[key] for key in sorted_keys[:top_k]]
+
+    fused: list[SearchResult] = []
+
+    # use the rrf score rather then just use it for sorting and returning
+    for key in sorted_keys[:top_k]:
+
+        result = results[key]
+
+        fused.append(
+            replace(
+                result,
+                score=rrf_score[key],
+            )
+        )
+
+    return fused

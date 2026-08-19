@@ -4,6 +4,7 @@ from app.rag.prompts.loader import PromptTemplateLoader
 
 from app.rag.query_rewriter.schemas import RewriteResult
 
+from typing import cast, Any
 from openai import AsyncOpenAI
 
 REWRITE_TEMPLATE = "rewrite_query.j2"
@@ -29,6 +30,7 @@ class OpenAIQueryRewriter(BaseQueryRewriter):
         rewritten_query = await self.client.responses.create(
             input=prompt,
             model=self.model,
+            reasoning=cast(Any, {"effort": settings.OPENAI_REASONING_EFFORT})
         )
 
         return RewriteResult(

@@ -20,7 +20,7 @@ class SearchStage(BaseQueryStage):
     def __init__(
         self,
         retriever: BaseRetriever,
-        top_k: int = 15,
+        top_k: int = 30,
     ):
         self.retriever = retriever
         self.top_k = top_k

@@ -70,6 +70,8 @@ class FilterTrace:
         default_factory=SearchFilters,
     )
 
+    deterministic: bool = False
+
     duration_ms: float = 0
 
 

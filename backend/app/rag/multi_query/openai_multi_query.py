@@ -3,6 +3,7 @@ from app.rag.multi_query.schemas import ExpansionResult
 from app.rag.prompts.loader import PromptTemplateLoader
 from app.core.config import settings
 
+from typing import cast, Any
 from openai import AsyncOpenAI
 import json
 
@@ -56,6 +57,7 @@ class OpenAIQueryExpander(BaseQueryExpander):
         response = await self.client.responses.create(
             model=self.model,
             input=prompt,
+            reasoning=cast(Any, {"effort": settings.OPENAI_REASONING_EFFORT})
         )
 
         # a malformed response falls back to no alternatives, which just means

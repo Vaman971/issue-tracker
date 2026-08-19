@@ -1,6 +1,7 @@
 from app.rag.filtering.base import BaseFilterExtractor
 from app.rag.prompts.loader import PromptTemplateLoader
 from app.rag.filtering.schemas import FilterResult, SearchFilters
+
 from app.core.config import settings
 
 from typing import cast, Any
@@ -50,6 +51,7 @@ class OpenAIFilterExtractor(BaseFilterExtractor):
         response = await self.client.responses.create(
             model=self.model,
             input=prompt,
+            reasoning=cast(Any, {"effort": settings.OPENAI_REASONING_EFFORT})
         )
 
         # any malformed response falls back to the unfiltered query rather

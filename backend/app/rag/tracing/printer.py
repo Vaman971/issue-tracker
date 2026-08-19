@@ -51,6 +51,9 @@ class TracePrinter:
         }
         print(_row("Filters", applied or "none"))
         print()
+        print(_row("Path","deterministic"
+        if trace.query.filter.deterministic
+        else "LLM"))
         print(_row("Time", format_ms(trace.query.filter.duration_ms)))
         print()
 
