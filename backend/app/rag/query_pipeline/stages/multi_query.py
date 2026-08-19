@@ -14,12 +14,6 @@ ISSUE_PATTERN = re.compile(
     re.IGNORECASE,
 )
 
-# "project Alpha"
-PROJECT_PATTERN = re.compile(
-    r"\bproject\s+[\w][\w-]*\b",
-    re.IGNORECASE,
-)
-
 UUID_PATTERN = re.compile(
     r"\b[0-9a-f]{8}-(?:[0-9a-f]{4}-){3}[0-9a-f]{12}\b",
     re.IGNORECASE,
@@ -32,11 +26,37 @@ NUMBER_PATTERN = re.compile(
 
 ENTITY_PATTERNS = (
     ISSUE_PATTERN,
-    PROJECT_PATTERN,
     UUID_PATTERN,
     NUMBER_PATTERN,
 )
 
+PROPERTY_ONLY_PATTERN = re.compile(
+    r"""
+    ^\s*
+    (?:which\s+)?                       # optional "which"
+    (?:issues?|tickets?|bugs?|tasks?)? # optional issue noun
+    \s*
+    (?:
+        (?:are|have|with|marked\s+as)\s*
+    )?
+    (?:
+        open
+        |closed
+        |resolved
+        |todo
+        |in[_\s-]?progress
+        |in[_\s-]?review
+        |done
+        |blocked
+        |high(?:\s+priority)?
+        |medium(?:\s+priority)?
+        |low(?:\s+priority)?
+        |critical
+    )
+    \s*\??\s*$
+    """,
+    re.IGNORECASE | re.VERBOSE,
+)
 
 class MultiQueryStage(BaseQueryStage):
     """Adds alternative phrasings of the query for retrieval to search.
@@ -57,22 +77,45 @@ class MultiQueryStage(BaseQueryStage):
         request: QueryRequest,
         processed: ProcessedQuery,
     ) -> bool:
-        """Skip queries that already name one specific record.
-
-        Rephrasing "issue 5443" three ways cannot find anything a single
-        lookup would miss, so the expansion call would be pure latency.
         """
+        Decide whether query expansion is useful enough to justify
+        another LLM call.
+
+        Skip expansion for:
+        - exact entity lookups
+        - exact numeric lookups
+        - property-only queries already handled by structured filters
+
+        Keep expansion for topical queries, even when they mention
+        a project or metadata value, because the remaining semantic
+        portion may benefit from alternative phrasings.
+        """
+
+        if self.expander is None:
+            return False
 
         query = (
             processed.search_queries[0]
             if processed.search_queries
             else request.question
-        )
+        ).strip()
 
-        return not any(
-            pattern.search(query)
-            for pattern in ENTITY_PATTERNS
-        )
+        # A specific entity lookup does not benefit from semantic expansion.
+        if any(
+            pattern.fullmatch(query)
+            for pattern in (
+                ISSUE_PATTERN,
+                UUID_PATTERN,
+                NUMBER_PATTERN,
+            )
+        ):
+            return False
+
+        # Pure property lookups are already handled by the filter stage.
+        if PROPERTY_ONLY_PATTERN.fullmatch(query):
+            return False
+
+        return True
 
     async def process(
         self,

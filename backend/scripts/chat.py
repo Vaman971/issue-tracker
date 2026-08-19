@@ -15,6 +15,7 @@ from app.rag.query_pipeline.stages.filter import FilterStage
 from app.rag.query_pipeline.stages.multi_query import MultiQueryStage
 from app.rag.query_pipeline.stages.search import SearchStage
 from app.rag.query_pipeline.stages.rerank import RerankStage
+from app.rag.query_pipeline.stages.parallel import ParallelQueryStage
 from app.rag.query_pipeline.stages.entity_consolidation import EntityConsolidationStage
 from app.rag.multi_query.openai_multi_query import OpenAIQueryExpander
 from app.rag.reranking.reranker import OpenAiReranker
@@ -62,6 +63,14 @@ async def main() -> None:
         session_factory=AsyncSessionLocal
     )
 
+    filter_extractor = OpenAIFilterExtractor(
+        prompt_loader=prompt_loader
+    )
+
+    query_expander = OpenAIQueryExpander(
+        prompt_loader=prompt_loader
+    )
+
     # question in, searched-for documents out — order matters, each stage
     # narrows what the next one works with
     query_pipeline = QueryPipeline(
@@ -69,11 +78,15 @@ async def main() -> None:
             RewriteStage(
                 rewriter=OpenAIQueryRewriter(prompt_loader=prompt_loader),
             ),
-            FilterStage(
-                extractor=OpenAIFilterExtractor(prompt_loader=prompt_loader),
-            ),
-            MultiQueryStage(
-                expander=OpenAIQueryExpander(prompt_loader=prompt_loader),
+            ParallelQueryStage(
+                stages=[
+                    FilterStage(
+                        extractor=filter_extractor,
+                    ),
+                    MultiQueryStage(
+                        expander=query_expander,
+                    ),
+                ],
             ),
             SearchStage(
                 retriever=retriever,

@@ -1,10 +1,33 @@
-You rewrite a search query into alternative phrasings.
+Your task is to generate multiple search queries for retrieving relevant issues
+from an issue-tracking database.
 
-Return ONLY a valid JSON object.
+The goal is NOT to produce simple paraphrases of the original query.
 
-Do not wrap it in markdown.
+When the user's query represents a broad category, identify the distinct
+sub-concepts, mechanisms, scenarios, failure modes, or interpretations that
+could satisfy the query.
 
-Do not explain your reasoning.
+For each important sub-concept, generate a retrieval query that specifically
+targets that scenario.
+
+For example:
+
+User query:
+"Which issues are account security risks?"
+
+Do NOT generate only:
+- account security issues
+- security risks to user accounts
+- account security vulnerabilities
+
+Instead, identify different scenarios such as:
+- unauthorized access or incorrect access control
+- authentication or session vulnerabilities
+- password reset or account recovery vulnerabilities
+- stale permissions after user removal or offboarding
+- credential or token vulnerabilities
+
+Then generate queries targeting those distinct scenarios.
 
 Schema:
 
@@ -12,24 +35,52 @@ Schema:
     "queries": ["...", "..."]
 }
 
-Rules
+Write exactly {{ count }} alternatives.
+Do not repeat the original query.
 
-Write exactly {{ count }} alternatives. Do not repeat the original query.
+Important rules:
 
-Each alternative must mean the same thing as the original, phrased the way a
-different person might search for it. Vary the wording, not the intent.
+1. Prefer semantic diversity over linguistic paraphrasing.
+2. For broad queries, identify different relevant scenarios, mechanisms,
+   failure modes, or sub-concepts.
+3. Each query should target a meaningfully different sub-concept.
+4. Do not generate multiple queries that express essentially the same idea
+   using different wording.
+5. When the query is broad, cover different plausible scenarios rather than
+   repeatedly targeting the broad category itself.
+6. When the query already contains multiple explicit concepts, preserve those
+   concepts while creating targeted variations.
+7. Do not invent specific issue IDs, facts, projects, implementation details,
+   or assumptions about the database.
+8. Every generated query must remain faithful to the user's original intent.
+9. Generate queries that are useful for both semantic and keyword retrieval.
+10. Prioritize coverage of distinct relevant scenarios over superficial
+    linguistic diversity.
+11. If the query is already highly specific, generate closely related
+    retrieval formulations rather than inventing unrelated sub-concepts.
 
-Use the vocabulary of an issue tracker: bug, defect, ticket, task, blocker,
-regression, assigned, reported, resolved.
-
-Do not answer the question. Do not add filters, dates, or details the original
-does not mention.
-
-Example
+Example 1:
 
 Query: attachment upload failing
-{"queries": ["file upload bug", "cannot attach files to issue"]}
 
-Query
+{
+    "queries": [
+        "file upload bug",
+        "cannot attach files to issue"
+    ]
+}
+
+Example 2:
+
+Query: Which issues are account security risks?
+
+{
+    "queries": [
+        "issues involving unauthorized account access or incorrect permissions",
+        "issues involving authentication or session security vulnerabilities"
+    ]
+}
+
+Query:
 
 {{ question }}

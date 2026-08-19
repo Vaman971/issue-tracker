@@ -18,7 +18,7 @@ class RerankStage(BaseQueryStage):
     def __init__(
         self,
         reranker: BaseReranker,
-        top_k: int = 5,
+        top_k: int = 10,
     ):
         self.reranker = reranker
         self.top_k = top_k
