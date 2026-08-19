@@ -33,6 +33,7 @@ from app.rag.multi_query.openai_multi_query import OpenAIQueryExpander
 from app.rag.prompts.loader import PromptTemplateLoader
 from app.rag.query_pipeline.schemas import ProcessedQuery, QueryRequest
 from app.rag.query_pipeline.stages.filter import FilterStage
+from app.rag.query_pipeline.stages.entity_consolidation import consolidate_entities
 from app.rag.query_pipeline.stages.multi_query import MultiQueryStage
 from app.rag.repositories.rag_document_repository import RagDocumentRepository
 from app.rag.reranking.reranker import OpenAiReranker
@@ -59,23 +60,12 @@ SOURCE_PATTERN = re.compile(r"issue:(\d+)")
 
 
 def consolidate(results: list[SearchResult], top_n: int) -> list[int]:
-    """Collapse chunks to unique entity ids, mirroring EntityConsolidationStage."""
+    """Entity ids after applying the production consolidation rule."""
 
-    seen: set[int] = set()
-    entities: list[int] = []
-
-    for result in results:
-
-        if result.entity_id in seen:
-            continue
-
-        seen.add(result.entity_id)
-        entities.append(result.entity_id)
-
-        if len(entities) >= top_n:
-            break
-
-    return entities
+    return [
+        result.entity_id
+        for result in consolidate_entities(results, top_n)
+    ]
 
 
 def print_retrieval_diagnostics(
@@ -266,10 +256,12 @@ async def evaluate_case(
         top_k=RERANK_TOP_K,
     )
 
-    rerank_entities = consolidate(
+    consolidated = consolidate_entities(
         [item.result for item in reranked.results],
         EVAL_K,
     )
+
+    rerank_entities = [result.entity_id for result in consolidated]
 
     row["rerank_top5"] = rerank_entities
     row["rerank"] = score(rerank_entities, expected)
@@ -278,9 +270,7 @@ async def evaluate_case(
 
         context_builder, prompt_loader, llm = answer_layer
 
-        context = context_builder.build(
-            [item.result for item in reranked.results][:EVAL_K]
-        )
+        context = context_builder.build(consolidated)
 
         prompt = prompt_loader.render(
             "answer.j2",

@@ -6,7 +6,8 @@ Do NOT answer the query.
 
 Do NOT explain your reasoning.
 
-The response must contain exactly one entry for every candidate.
+Consider EVERY candidate, but return only the {{ top_k }} most relevant,
+best first. Candidates you leave out are treated as least relevant.
 
 Each entry must contain exactly these three fields:
 
@@ -40,7 +41,7 @@ Schema:
 
 Rules:
 
-- Return one result for every candidate document.
+- Return exactly {{ top_k }} results, ordered most relevant first.
 - Do not invent candidates.
 - Use the exact entity_id and chunk_index provided.
 - score must be a number between 0 and 1.

@@ -77,6 +77,8 @@ class Settings(BaseSettings):
     OPENAI_ANSWER_MODEL: str = "gpt-5-mini"
     OPENAI_REASONING_EFFORT: str = "minimal"
     DAMPING_CONSTANT: int = 30
+    # rerank normally finishes in ~5s; beyond this we fall back to RRF order
+    OPENAI_RERANK_TIMEOUT_SECONDS: float = 12.0
 
     @field_validator(
         "DATABASE_URL",
