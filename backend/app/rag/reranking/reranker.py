@@ -1,6 +1,6 @@
 import json
 
-from openai import AsyncOpenAI
+from openai import APITimeoutError, AsyncOpenAI
 from typing import cast, Any
 
 from app.core.config import settings
@@ -55,14 +55,28 @@ class OpenAiReranker(BaseReranker):
         prompt = self.prompt_loader.render(
             RERANK_TEMPLATE,
             query=query,
-            results=candidates
+            results=candidates,
+            # only what the pipeline consumes; output length drives latency
+            top_k=min(top_k, len(candidates)),
         )
 
-        response = await self.client.responses.create(
-            model=self.model,
-            input=prompt,
-            reasoning=cast(Any, {"effort": settings.OPENAI_REASONING_EFFORT})
-        )
+        try:
+            response = await self.client.responses.create(
+                model=self.model,
+                input=prompt,
+                reasoning=cast(Any, {"effort": settings.OPENAI_REASONING_EFFORT}),
+                timeout=settings.OPENAI_RERANK_TIMEOUT_SECONDS,
+            )
+        except APITimeoutError:
+            # a slow provider response should not stall the whole turn; the
+            # candidates are already ranked by RRF, so keep that order
+            return RerankResponse(
+                results=[
+                    RerankResult(result=candidate, score=candidate.score)
+                    for candidate in results[:top_k]
+                ],
+                model=self._model,
+            )
 
         payload = self._parse_response(
             response.output_text

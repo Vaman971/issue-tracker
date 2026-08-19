@@ -1,6 +1,7 @@
 from app.rag.context.base import ContextBase
 from app.rag.llm.base import BaseLLM
 from app.rag.llm.pricing import estimate_cost
+from app.rag.llm.schemas import LLMUsage
 from app.rag.memory.base import BaseMemory
 from app.rag.memory.formatter import MemoryFormatter
 from app.rag.memory.schemas import ChatMessage, MessageRole
@@ -86,21 +87,35 @@ class RAGService:
 
         timer = Timer()
 
-        response = await self.llm.generate(
-            prompt
-        )
+        chunks: list[str] = [] # chunks which user will see
+        ttft_ms = 0.0
+        usage = LLMUsage()
 
-        trace.llm.duration_ms = timer.elapsed_ms()
+        async for delta in self.llm.stream(prompt, usage):
 
-        trace.llm.answer = response.content
-        trace.llm.model = response.model
-        trace.llm.input_tokens = response.input_tokens
-        trace.llm.output_tokens = response.output_tokens
-        trace.llm.total_tokens = response.total_tokens
+            # first delta is the moment the user could start reading
+            if not chunks:
+                ttft_ms = timer.elapsed_ms()
+
+            chunks.append(delta)
+            print(delta, end="", flush=True)
+
+        answer = "".join(chunks)
+        
+
+        trace.llm.ttft_ms = ttft_ms
+        trace.llm.ttlt_ms = timer.elapsed_ms()
+        trace.llm.duration_ms = trace.llm.ttlt_ms
+
+        trace.llm.answer = answer
+        trace.llm.model = usage.model or self.llm.model
+        trace.llm.input_tokens = usage.input_tokens
+        trace.llm.output_tokens = usage.output_tokens
+        trace.llm.total_tokens = usage.total_tokens
         trace.llm.cost_usd = estimate_cost(
-            response.model,
-            response.input_tokens,
-            response.output_tokens,
+            trace.llm.model,
+            usage.input_tokens,
+            usage.output_tokens,
         )
 
         # recorded only once generation succeeded, so a failed turn leaves no
@@ -115,7 +130,7 @@ class RAGService:
             self.memory.add(
                 ChatMessage(
                     role=MessageRole.ASSISTANT,
-                    content=response.content,
+                    content=answer,
                 )
             )
 
@@ -124,10 +139,10 @@ class RAGService:
         TracePrinter.print(trace)
 
         return RAGResponse(
-            answer=response.content,
+            answer=answer,
             context=context,
-            model=response.model,
-            input_tokens=response.input_tokens,
-            output_tokens=response.output_tokens,
-            total_tokens=response.total_tokens,
+            model=trace.llm.model,
+            input_tokens=trace.llm.input_tokens,
+            output_tokens=trace.llm.output_tokens,
+            total_tokens=trace.llm.total_tokens,
         )

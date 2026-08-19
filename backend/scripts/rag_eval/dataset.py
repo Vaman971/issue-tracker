@@ -7,8 +7,15 @@ than an artefact of incomplete labelling.
 
 Deliberately excluded: broad topical queries such as "which issues mention
 session token problems". The pre-existing corpus contains many issues on those
-topics (5+ matches for "session token" alone), so their true expected set
-cannot be enumerated and any recall figure would be meaningless.
+topics (59 issues are titled "Session token not invalidated on logout", 233
+mention a security audit finding), so their true expected set cannot be
+enumerated and any recall figure would be meaningless.
+
+The same rule applies to multi-target cases. A query like "which issues are
+account security risks" has hundreds of legitimate answers in this corpus, so
+labelling it with two seeded ids measures nothing but the labeller's guess.
+Every multi-target case below is therefore anchored the same way the single
+target ones are.
 
 Verification query used for every anchor:
 
@@ -184,31 +191,34 @@ EVAL_CASES: list[EvalCase] = [
     ),
 
     # ---------------------------------------------------------------
-    # multi-target — more than one seeded issue legitimately matches.
-    # Each member was verified individually.
+    # multi-target — every member verified by an anchor phrase that
+    # matches EXACTLY these issues across all 2734 rows. Earlier versions
+    # of these cases used broad concepts ("account security risks",
+    # "deployment") whose true answer set runs into the hundreds; those
+    # were unwinnable by construction and have been replaced.
     # ---------------------------------------------------------------
 
     EvalCase(
-        id="security-findings-01",
+        id="silent-failure-01",
         category="multi",
-        query="Which issues are account security risks?",
-        # 2725 stale access after removal, 2732 reusable reset links
-        expected_entity_ids=frozenset({2725, 2732}),
+        query="Which issues describe something failing with no warning to the user?",
+        # anchor "without warning" -> corpus [2720, 2734]
+        expected_entity_ids=frozenset({2720, 2734}),
     ),
 
     EvalCase(
-        id="silent-data-loss-01",
+        id="renders-empty-01",
         category="multi",
-        query="Which issues cause data to be lost without any warning?",
-        # 2726 unsaved comment text, 2734 truncated imports
-        expected_entity_ids=frozenset({2726, 2734}),
+        query="Which issues cause content to render blank or empty?",
+        # anchor "blank" -> corpus [2721, 2727]
+        expected_entity_ids=frozenset({2721, 2727}),
     ),
 
     EvalCase(
-        id="deploy-related-01",
+        id="wrong-ordering-01",
         category="multi",
-        query="Which issues only show up during a deployment?",
-        # 2722 duplicate emails during deploys, 2720 clock drift between replicas
-        expected_entity_ids=frozenset({2722, 2720}),
+        query="Which issues cause items to appear in the wrong order or position?",
+        # anchor "ordering" -> corpus [2731, 2733]
+        expected_entity_ids=frozenset({2731, 2733}),
     ),
 ]

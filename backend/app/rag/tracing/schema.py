@@ -44,6 +44,11 @@ class LLMTrace:
 
     duration_ms: float = 0.0
 
+    # streaming: when the first and last token arrived
+    ttft_ms: float = 0.0
+
+    ttlt_ms: float = 0.0
+
 @dataclass(slots=True)
 class RewriteTrace:
 
