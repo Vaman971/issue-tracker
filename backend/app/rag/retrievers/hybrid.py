@@ -1,5 +1,7 @@
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
+from app.rag.embeddings.base import BaseEmbedding
+from app.rag.embeddings.openai_embedder import OpenAiEmbedder
 from app.rag.retrievers.base import BaseRetriever
 from app.rag.retrievers.pgvector_retriever import PGVectorRetriever
 from app.rag.repositories.rag_document_repository import RagDocumentRepository
@@ -10,8 +12,14 @@ from app.rag.retrievers.schemas import SearchResult
 from app.rag.tracing.schema import RetrievalTrace
 
 class HybridRetriever(BaseRetriever):
-    def __init__(self, session_factory: async_sessionmaker[AsyncSession]) -> None:
+    def __init__(
+        self,
+        session_factory: async_sessionmaker[AsyncSession],
+        embedder: BaseEmbedding | None = None,
+    ) -> None:
         self.session_factory = session_factory
+        # built once and reused; a new client per search would be wasteful
+        self.embedder = embedder or OpenAiEmbedder()
 
     async def search(
         self,
@@ -25,7 +33,8 @@ class HybridRetriever(BaseRetriever):
         async with self.session_factory() as session:
 
             vector_retriever = PGVectorRetriever(
-                session=session
+                session=session,
+                embedder=self.embedder,
             )
 
             keyword_retriever = RagDocumentRepository(
@@ -35,6 +44,7 @@ class HybridRetriever(BaseRetriever):
             semantic = await vector_retriever.search(
                 query=query,
                 top_k=top_k,
+                trace=trace,
                 filters=filters,
                 entity_ids=entity_ids,
             )
@@ -61,7 +71,8 @@ class HybridRetriever(BaseRetriever):
 
             if trace is not None:
                 # extend, not assign: the search stage calls this once per query
-                trace.semantic_results.extend(semantic)
+                # semantic results and embedding counters are recorded by
+                # the vector retriever itself, which is what performs them
                 trace.keyword_results.extend(keyword)
 
             merged = fuse([semantic, keyword], top_k=top_k)

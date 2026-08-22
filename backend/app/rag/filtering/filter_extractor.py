@@ -38,6 +38,10 @@ class OpenAIFilterExtractor(BaseFilterExtractor):
 
         self.model = settings.OPENAI_CHAT_MODEL
 
+    @property
+    def cache_signature(self) -> str:
+        return f"{self.model}"
+
     async def extract(
         self,
         query: str,

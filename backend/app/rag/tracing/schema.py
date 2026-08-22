@@ -16,6 +16,11 @@ class RetrievalTrace:
 
     final_results: list[SearchResult] = field(default_factory=list)
 
+    # one embedding per search query, so these are counts not flags
+    embedding_cache_hits: int = 0
+
+    embedding_cache_misses: int = 0
+
     duration_ms: float = 0.0
 
 
@@ -64,7 +69,8 @@ class RewriteTrace:
     # stage actually runs, so a stage the pipeline never called stays marked
     skipped: bool = True
 
-    skip_reason: str = "No conversation history"
+    # covers both skips: no history at all, and a self-contained question
+    skip_reason: str = "No reference to resolve"
 
 @dataclass(slots=True)
 class FilterTrace:
@@ -77,6 +83,8 @@ class FilterTrace:
 
     deterministic: bool = False
 
+    cache_hit: bool = False
+
     duration_ms: float = 0
 
 
@@ -88,6 +96,8 @@ class MultiQueryTrace:
     duration_ms: float = 0.0
 
     skipped: bool = True
+
+    cache_hit: bool = False
 
     skip_reason: str = "Specific entity lookup"
 
@@ -102,6 +112,8 @@ class RerankTrace:
     duration_ms: float = 0.0
 
     model: str = ""
+
+    cache_hit: bool = False
 
     input_tokens: int = 0
 

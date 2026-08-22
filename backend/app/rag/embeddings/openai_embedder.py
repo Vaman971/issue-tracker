@@ -4,7 +4,7 @@ from app.core.config import settings
 
 from app.rag.chunkers.schemas import Chunk
 from app.rag.embeddings.base import BaseEmbedding
-from app.rag.embeddings.schemas import EmbeddingResult
+from app.rag.embeddings.schemas import EmbeddingResult, EmbeddingStats
 
 class OpenAiEmbedder(BaseEmbedding):
     def __init__(self):
@@ -69,7 +69,13 @@ class OpenAiEmbedder(BaseEmbedding):
     async def embed_text(
         self,
         text: str,
+        stats: EmbeddingStats | None = None,
     ) -> list[float]:
+
+        # reaching the provider means nothing served it from a cache
+        if stats is not None:
+            stats.cache_misses += 1
+
         response = await self.client.embeddings.create(
             model=self.model,
             input=text,

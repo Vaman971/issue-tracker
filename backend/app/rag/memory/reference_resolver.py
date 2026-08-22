@@ -7,6 +7,11 @@ REFERENCE_WORDS = (
     "those",
     "these",
     "they",
+    "ones",
+    "others",
+    "the rest",
+    "the others",
+    "the same",
     "the first one",
     "the second one",
     "the third one",
@@ -24,12 +29,24 @@ REFERENCE_PATTERN = re.compile(
     re.IGNORECASE,
 )
 
+# A question that opens with a continuation is a follow-up even when it
+# contains no pronoun at all: "and the low priority ones?", "what about
+# authentication?". Anchored to the start so "issues tagged and closed"
+# is not mistaken for one.
+CONTINUATION_PATTERN = re.compile(
+    r"^\s*(?:and|also|plus|what about|how about|ok(?:ay)?[,\s]+and)\b",
+    re.IGNORECASE,
+)
+
 
 class ReferenceResolver:
 
     def _has_reference(self, question: str) -> bool:
 
-        return bool(REFERENCE_PATTERN.search(question))
+        if REFERENCE_PATTERN.search(question):
+            return True
+
+        return bool(CONTINUATION_PATTERN.search(question))
 
     def resolve(
             self,

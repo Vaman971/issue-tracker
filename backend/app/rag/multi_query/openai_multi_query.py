@@ -29,7 +29,7 @@ class OpenAIQueryExpander(BaseQueryExpander):
     def __init__(
         self,
         prompt_loader: PromptTemplateLoader,
-        count: int = 2,
+        count: int = 3,
     ) -> None:
 
         self.client = AsyncOpenAI(
@@ -42,6 +42,10 @@ class OpenAIQueryExpander(BaseQueryExpander):
 
         # how many alternatives to ask for, on top of the original query
         self.count = count
+
+    @property
+    def cache_signature(self) -> str:
+        return f"{self.model}:{self.count}"
 
     async def expand(
         self,
