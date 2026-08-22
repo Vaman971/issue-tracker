@@ -139,6 +139,8 @@ class RAGTrace:
     # written by the query pipeline, not by RAGService
     query: QueryTrace = field(default_factory=QueryTrace)
 
+    reference_ids: list[int] = field(default_factory=list)
+
     context: list[ContextDocument] = field(default_factory=list)
 
     prompt: PromptTrace = field(default_factory=PromptTrace)

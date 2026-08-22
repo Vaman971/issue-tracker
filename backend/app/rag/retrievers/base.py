@@ -13,6 +13,7 @@ class BaseRetriever(ABC):
         top_k: int = 5,
         trace: RetrievalTrace | None = None,
         filters: SearchFilters | None = None,
+        entity_ids: list[int] | None = None,
     ) -> list[SearchResult]:
         """Return the top_k results for `query`.
 

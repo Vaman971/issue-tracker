@@ -37,10 +37,17 @@ class RagDocumentRepository:
         query: str,
         limit: int,
         filters: SearchFilters | None = None,
+        entity_ids: list[int] | None = None,
     ):
         document_vector = func.to_tsvector(
             "english",
             RagDocument.content,
+        )
+
+        scope = (
+            [RagDocument.entity_id.in_(entity_ids)]
+            if entity_ids
+            else []
         )
 
         # First try the stricter AND query.
@@ -60,13 +67,15 @@ class RagDocumentRepository:
             .where(
                 document_vector.op("@@")(and_query),
                 *build_conditions(filters),
+                *scope,
             )
             .order_by(desc("rank"))
             .limit(limit)
         )
 
         result = await self.session.execute(stmt)
-        rows = result.all()
+        # list of (RagDocument, rank); widened so the OR pass can extend it
+        rows: list[tuple] = [(row, rank) for row, rank in result.all()]
 
         # If AND search already gives enough candidates, use it.
         if len(rows) >= limit:
@@ -93,6 +102,7 @@ class RagDocumentRepository:
             .where(
                 document_vector.op("@@")(or_query),
                 *build_conditions(filters),
+                *scope,
             )
             .order_by(desc("rank"))
             .limit(limit)

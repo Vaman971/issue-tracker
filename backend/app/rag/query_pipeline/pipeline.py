@@ -5,7 +5,6 @@ from app.rag.query_pipeline.schemas import ProcessedQuery
 from app.rag.query_pipeline.schemas import QueryRequest
 from app.rag.tracing.schema import QueryTrace
 
-
 class QueryPipeline(BaseQueryPipeline):
 
     def __init__(

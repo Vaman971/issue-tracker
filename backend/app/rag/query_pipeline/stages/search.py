@@ -45,7 +45,9 @@ class SearchStage(BaseQueryStage):
                 query=text,
                 top_k=self.top_k,
                 filters=processed.filters,
-                trace=trace.retrieval
+                trace=trace.retrieval,
+                # entities the previous turn returned
+                entity_ids=request.reference_ids or None,
             )
 
             for text in processed.search_queries

@@ -10,6 +10,8 @@ class QueryRequest:
 
     history: str
 
+    reference_ids: list[int] = field(default_factory=list)
+
 @dataclass(slots=True)
 class ProcessedQuery:
 

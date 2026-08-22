@@ -4,7 +4,8 @@ from app.rag.llm.pricing import estimate_cost
 from app.rag.llm.schemas import LLMUsage
 from app.rag.memory.base import BaseMemory
 from app.rag.memory.formatter import MemoryFormatter
-from app.rag.memory.schemas import ChatMessage, MessageRole
+from app.rag.memory.schemas import ChatMessage, MessageRole, ConversationState
+from app.rag.memory.reference_resolver import ReferenceResolver
 from app.rag.prompts.loader import PromptTemplateLoader
 from app.rag.query_pipeline.base import BaseQueryPipeline
 from app.rag.query_pipeline.schemas import QueryRequest
@@ -33,6 +34,8 @@ class RAGService:
 
         memory_formatter: MemoryFormatter | None = None,
 
+        resolver: ReferenceResolver | None = None
+
     ) -> None:
 
         # owns rewriting, filtering and retrieval
@@ -45,6 +48,7 @@ class RAGService:
         # optional: without it every ask() is a standalone, historyless turn
         self.memory = memory
         self.memory_formatter = memory_formatter or MemoryFormatter()
+        self.resolver = resolver
 
     async def ask (self, question: str) -> RAGResponse:
 
@@ -57,15 +61,46 @@ class RAGService:
         history = self.memory.messages() if self.memory else []
         formatted_history = self.memory_formatter.format(history)
 
+        # update memory state
+        state = self.memory.get_state() if self.memory else None
+        reference_ids: list[int] = []
+
+        if state and self.resolver:
+            reference_ids = self.resolver.resolve(
+                question=question,
+                state=state
+            )
+
         # query processing happens here; the pipeline gets
         # only its own slice of the trace to write into
         processed = await self.query_pipeline.process(
             request=QueryRequest(
                 question=question,
                 history=formatted_history,
+                reference_ids=reference_ids
             ),
             trace=trace.query,
         )
+
+        # update the state of the memory
+        if self.memory:
+            self.memory.update_state(
+                ConversationState(
+                    last_question=question,
+                    last_rewritten_query=processed.rewritten_query,
+                    # a follow-up narrows the VIEW, not the set being referred to.
+                    # keeping the original ids means "them" still means the same
+                    # issues on the third question and the fourth.
+                    last_result_ids=(
+                        reference_ids
+                        if reference_ids
+                        else [result.entity_id for result in processed.results]
+                    ),
+                )
+            )
+
+            # capture the references.
+            trace.reference_ids = reference_ids
 
         context = self.context_builder.build(
             processed.results
@@ -98,7 +133,6 @@ class RAGService:
                 ttft_ms = timer.elapsed_ms()
 
             chunks.append(delta)
-            print(delta, end="", flush=True)
 
         answer = "".join(chunks)
         

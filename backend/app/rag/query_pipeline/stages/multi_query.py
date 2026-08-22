@@ -94,6 +94,11 @@ class MultiQueryStage(BaseQueryStage):
         if self.expander is None:
             return False
 
+        # the search is already scoped to a known set; alternative phrasings
+        # cannot widen it, so the extra LLM call buys nothing
+        if request.reference_ids:
+            return False
+
         query = (
             processed.search_queries[0]
             if processed.search_queries

@@ -97,6 +97,7 @@ class TracePrinter:
         print(_row("Cost", f"${trace.llm.cost_usd:.4f}"))
         print(_row("First Token", format_ms(trace.llm.ttft_ms)))
         print(_row("Last Token", format_ms(trace.llm.ttlt_ms)))
+        print(_row("Reference Ids", trace.reference_ids))
         print(_row("Time", format_ms(trace.llm.duration_ms)))
         print()
 
