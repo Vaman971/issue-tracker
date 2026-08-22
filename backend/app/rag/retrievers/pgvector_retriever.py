@@ -21,6 +21,7 @@ class PGVectorRetriever(BaseRetriever):
         top_k: int = 5,
         trace: RetrievalTrace | None = None,
         filters: SearchFilters | None = None,
+        entity_ids: list[int] | None = None,
     ) -> list[SearchResult]:
 
         query_embedding = await self.embedder.embed_text(query)
@@ -36,6 +37,8 @@ class PGVectorRetriever(BaseRetriever):
             .where(
                 RagDocument.is_active.is_(True),
                 *build_conditions(filters),
+                # scope to a known set, e.g. the previous turn's results
+                *([RagDocument.entity_id.in_(entity_ids)] if entity_ids else []),
             )
             .order_by("distance")
             .limit(top_k)

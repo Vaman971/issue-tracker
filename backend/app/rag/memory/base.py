@@ -1,7 +1,7 @@
 from abc import ABC
 from abc import abstractmethod
 
-from app.rag.memory.schemas import ChatMessage
+from app.rag.memory.schemas import ChatMessage, ConversationState
 
 
 class BaseMemory(ABC):
@@ -17,6 +17,19 @@ class BaseMemory(ABC):
     def messages(
         self,
     ) -> list[ChatMessage]:
+        pass
+
+    @abstractmethod
+    def get_state(
+        self,
+    ) -> ConversationState:
+        pass
+
+    @abstractmethod
+    def update_state(
+        self,
+        state: ConversationState,
+    ) -> None:
         pass
 
     @abstractmethod

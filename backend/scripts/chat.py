@@ -3,6 +3,7 @@ import asyncio
 from app.db.session import AsyncSessionLocal
 from app.rag.services.rag_service import RAGService
 from app.rag.memory.in_memory import InMemoryMemory
+from app.rag.memory.reference_resolver import ReferenceResolver
 from app.rag.retrievers.hybrid import HybridRetriever
 from app.rag.context.context_builder import ContextBuilder
 from app.rag.prompts.loader import PromptTemplateLoader
@@ -22,7 +23,7 @@ from app.rag.reranking.reranker import OpenAiReranker
 
 
 class ChatService:
-    def __init__(self, query_pipeline: QueryPipeline, context_builder: ContextBuilder, llm_provider: OpenAILLM, prompt_builder: PromptTemplateLoader, memory: InMemoryMemory) -> None:
+    def __init__(self, query_pipeline: QueryPipeline, context_builder: ContextBuilder, llm_provider: OpenAILLM, prompt_builder: PromptTemplateLoader, memory: InMemoryMemory, resolver: ReferenceResolver) -> None:
 
         # build the RAG pipeline once, reuse it for every question;
         # it owns the conversation history for the whole session
@@ -32,6 +33,7 @@ class ChatService:
             prompt_loader=prompt_builder,
             llm=llm_provider,
             memory=memory,
+            resolver=resolver,
         )
 
 
@@ -54,6 +56,8 @@ class ChatService:
 async def main() -> None:
 
     memory = InMemoryMemory()
+
+    resolver = ReferenceResolver()
 
     # one loader shared by the answer and rewrite templates
     prompt_loader = PromptTemplateLoader()
@@ -110,6 +114,7 @@ async def main() -> None:
         llm_provider=OpenAILLM(),
         prompt_builder=prompt_loader,
         memory=memory,
+        resolver=resolver
     )
 
     while await chat.ask():

@@ -19,6 +19,7 @@ class HybridRetriever(BaseRetriever):
         top_k: int = 5,
         trace: RetrievalTrace | None = None,
         filters: SearchFilters | None = None,
+        entity_ids: list[int] | None = None,
     ) -> list[SearchResult]:
 
         async with self.session_factory() as session:
@@ -35,12 +36,14 @@ class HybridRetriever(BaseRetriever):
                 query=query,
                 top_k=top_k,
                 filters=filters,
+                entity_ids=entity_ids,
             )
 
             rows = await keyword_retriever.keyword_search(
                 query,
                 limit=top_k,
                 filters=filters,
+                entity_ids=entity_ids,
             )
 
             # ts_rank is the keyword relevance score; the ORM row itself has none
