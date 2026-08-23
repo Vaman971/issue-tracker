@@ -6,6 +6,7 @@ from app.rag.reranking.schemas import RerankResponse
 class BaseReranker(ABC):
     """Base interface for candidate reranking."""
 
+
     @abstractmethod
     async def rerank(
         self,
@@ -14,3 +15,7 @@ class BaseReranker(ABC):
         top_k: int,
     )-> RerankResponse:
         raise NotImplementedError
+
+    @property
+    def model(self)-> str:
+        return ""

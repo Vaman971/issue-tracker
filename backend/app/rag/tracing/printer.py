@@ -54,6 +54,8 @@ class TracePrinter:
         print(_row("Path","deterministic"
         if trace.query.filter.deterministic
         else "LLM"))
+        if not trace.query.filter.deterministic:
+            print(_row("Cache Hit", bool(trace.query.filter.cache_hit)))
         print(_row("Time", format_ms(trace.query.filter.duration_ms)))
         print()
 
@@ -67,6 +69,7 @@ class TracePrinter:
             if not trace.query.multi_query.alternatives:
                 print(_row("Alternatives", "none"))
             print()
+            print(_row("Cache Hit", bool(trace.query.multi_query.cache_hit)))
             print(_row("Time", format_ms(trace.query.multi_query.duration_ms)))
             print()
 
@@ -74,6 +77,11 @@ class TracePrinter:
         print(_row("Semantic Results", len(trace.query.retrieval.semantic_results)))
         print(_row("Keyword Results", len(trace.query.retrieval.keyword_results)))
         print(_row("Merged Results", len(trace.query.retrieval.final_results)))
+        print(_row(
+            "Embedding Cache",
+            f"{trace.query.retrieval.embedding_cache_hits} hit / "
+            f"{trace.query.retrieval.embedding_cache_misses} miss",
+        ))
         print()
         print(_row("Time", format_ms(trace.query.retrieval.duration_ms)))
         print()
@@ -83,6 +91,7 @@ class TracePrinter:
         print(_row("Final count", trace.query.rerank.final_count))
         print()
         print(_row("Model", trace.query.rerank.model))
+        print(_row("Cache Hit", bool(trace.query.rerank.cache_hit)))
         print(_row("Input Tokens", trace.query.rerank.input_tokens))
         print(_row("Output Tokens", trace.query.rerank.output_tokens))
         print(_row("Reasoning Tokens", trace.query.rerank.reasoning_tokens))

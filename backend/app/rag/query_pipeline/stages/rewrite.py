@@ -1,3 +1,4 @@
+from app.rag.memory.reference_resolver import REFERENCE_PATTERN
 from app.rag.query_pipeline.stages.base import BaseQueryStage
 from app.rag.query_rewriter.base import BaseQueryRewriter
 from app.rag.query_rewriter.schemas import RewriteResult
@@ -25,8 +26,18 @@ class RewriteStage(BaseQueryStage):
         request: QueryRequest,
         processed: ProcessedQuery,
     ) -> bool:
+        """Rewrite only when the question cannot stand on its own.
 
-        return bool(request.history.strip())
+        History alone is not a reason to rewrite. A self-contained question
+        such as "which issues involve JWT?" means the same thing on turn one
+        and turn five, and paraphrasing it costs an LLM call while changing
+        the text every later stage keys its cache on.
+        """
+
+        if not request.history.strip():
+            return False
+
+        return bool(REFERENCE_PATTERN.search(request.question))
 
     async def process(
         self,

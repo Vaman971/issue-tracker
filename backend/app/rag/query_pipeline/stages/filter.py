@@ -1,9 +1,13 @@
+import hashlib
+from dataclasses import asdict
+
 from app.rag.query_pipeline.stages.base import BaseQueryStage
 from app.rag.filtering.base import BaseFilterExtractor
 from app.rag.filtering.deterministic import extract_deterministic
-from app.rag.filtering.schemas import FilterResult
+from app.rag.filtering.schemas import FilterResult, SearchFilters
 from app.rag.tracing.timer import Timer
 from app.rag.tracing.schema import QueryTrace
+from app.services.cache import cache_get_json, cache_set_json
 
 
 from app.rag.query_pipeline.schemas import QueryRequest, ProcessedQuery
@@ -20,6 +24,41 @@ class FilterStage(BaseQueryStage):
         extractor: BaseFilterExtractor | None = None,
     ):
         self.extractor = extractor
+
+    @staticmethod
+    def _build_cache_key(query: str, signature: str) -> str:
+        """Cache key for one query's extracted filters.
+
+        The signature comes from the extractor, so a different model cannot
+        read another one's entries.
+        """
+        fingerprint = hashlib.sha1(
+            query.strip().lower().encode("utf-8")
+        ).hexdigest()[:16]
+        return f"filter:extraction:{signature}:{fingerprint}"
+
+    @staticmethod
+    def _rebuild_result(cached: dict, query: str) -> FilterResult:
+        """Rebuild the dataclasses from cached JSON.
+
+        asdict() flattens SearchFilters along with FilterResult, so a hit
+        returns nested plain dicts. .get() keeps an entry written under an
+        older shape from breaking the turn.
+        """
+
+        filters = cached.get("filters") or {}
+
+        return FilterResult(
+            query=cached.get("query", query),
+            filters=SearchFilters(
+                status=filters.get("status"),
+                priority=filters.get("priority"),
+                project=filters.get("project"),
+                creator=filters.get("creator"),
+                assignee=filters.get("assignee"),
+                labels=filters.get("labels") or [],
+            ),
+        )
 
     async def process(
         self,
@@ -69,9 +108,28 @@ class FilterStage(BaseQueryStage):
 
             timer = Timer()
 
-            filtered_query = await self.extractor.extract(
-                query=processed.rewritten_query,
+            # only the LLM path is cached; the deterministic path already
+            # costs nothing, so a redis round-trip would make it slower
+            cache_key = self._build_cache_key(
+                processed.rewritten_query,
+                self.extractor.cache_signature,
             )
+
+            cached = await cache_get_json(cache_key)
+
+            if cached is not None:
+                filtered_query = self._rebuild_result(
+                    cached,
+                    processed.rewritten_query,
+                )
+                trace.filter.cache_hit = True
+            else:
+                filtered_query = await self.extractor.extract(
+                    query=processed.rewritten_query,
+                )
+
+                await cache_set_json(cache_key, asdict(filtered_query))
+                trace.filter.cache_hit = False
 
             trace.filter.duration_ms = timer.elapsed_ms()
 

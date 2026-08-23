@@ -3,6 +3,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.rag_document import RagDocument
 
+from app.rag.embeddings.base import BaseEmbedding
+from app.rag.embeddings.schemas import EmbeddingStats
 from app.rag.embeddings.openai_embedder import OpenAiEmbedder
 from app.rag.filtering.conditions import build_conditions
 from app.rag.filtering.schemas import SearchFilters
@@ -11,9 +13,13 @@ from app.rag.retrievers.schemas import SearchResult
 from app.rag.tracing.schema import RetrievalTrace
 
 class PGVectorRetriever(BaseRetriever):
-    def __init__(self, session: AsyncSession):
+    def __init__(
+        self,
+        session: AsyncSession,
+        embedder: BaseEmbedding | None = None,
+    ):
         self.session = session
-        self.embedder = OpenAiEmbedder()
+        self.embedder = embedder or OpenAiEmbedder()
 
     async def search(
         self,
@@ -24,7 +30,9 @@ class PGVectorRetriever(BaseRetriever):
         entity_ids: list[int] | None = None,
     ) -> list[SearchResult]:
 
-        query_embedding = await self.embedder.embed_text(query)
+        stats = EmbeddingStats()
+
+        query_embedding = await self.embedder.embed_text(query, stats)
 
         stmt = (
             select(
@@ -64,7 +72,11 @@ class PGVectorRetriever(BaseRetriever):
         ]
 
         if trace is not None:
-            trace.semantic_results = results
-            trace.final_results = results
+            # accumulated: the search stage calls this once per query
+            trace.embedding_cache_hits += stats.cache_hits
+            trace.embedding_cache_misses += stats.cache_misses
+
+            # extend, not assign: the search stage calls this once per query
+            trace.semantic_results.extend(results)
 
         return results

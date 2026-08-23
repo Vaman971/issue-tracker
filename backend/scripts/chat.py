@@ -4,6 +4,8 @@ from app.db.session import AsyncSessionLocal
 from app.rag.services.rag_service import RAGService
 from app.rag.memory.in_memory import InMemoryMemory
 from app.rag.memory.reference_resolver import ReferenceResolver
+from app.rag.embeddings.cached import CachedEmbedder
+from app.rag.embeddings.openai_embedder import OpenAiEmbedder
 from app.rag.retrievers.hybrid import HybridRetriever
 from app.rag.context.context_builder import ContextBuilder
 from app.rag.prompts.loader import PromptTemplateLoader
@@ -64,7 +66,8 @@ async def main() -> None:
 
     # multiple db sessions for each request
     retriever = HybridRetriever(
-        session_factory=AsyncSessionLocal
+        session_factory=AsyncSessionLocal,
+        embedder=CachedEmbedder(OpenAiEmbedder()),
     )
 
     filter_extractor = OpenAIFilterExtractor(

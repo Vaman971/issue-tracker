@@ -29,7 +29,6 @@ class OpenAiReranker(BaseReranker):
 
         self._model = settings.OPENAI_CHAT_MODEL
 
-
     @property
     def model(self)-> str:
         return self._model
@@ -42,7 +41,7 @@ class OpenAiReranker(BaseReranker):
     ) -> RerankResponse:
 
         if not results:
-            # rest of the arguments will default to zer0
+            # rest of the arguments will default to zero
             return RerankResponse(
                 results=[]
             )

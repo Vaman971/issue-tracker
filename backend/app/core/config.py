@@ -21,6 +21,9 @@ class Settings(BaseSettings):
     SQL_ECHO: bool = False
 
     REDIS_DEFAULT_TTL_SECONDS: int = 300
+    # embeddings never go stale: the same text and model always give the
+    # same vector, whatever happens to the corpus
+    REDIS_EMBEDDING_TTL_SECONDS: int = 60 * 60 * 24 * 30
     REDIS_HEALTHCHECK_TIMEOUT_SECONDS: int = 3
 
     AUTH_RATE_LIMIT_WINDOW_SECONDS: int = 60
@@ -77,8 +80,6 @@ class Settings(BaseSettings):
     OPENAI_ANSWER_MODEL: str = "gpt-5-mini"
     OPENAI_REASONING_EFFORT: str = "minimal"
     DAMPING_CONSTANT: int = 30
-    # rerank normally finishes in ~5s; beyond this we fall back to RRF order
-    OPENAI_RERANK_TIMEOUT_SECONDS: float = 12.0
 
     @field_validator(
         "DATABASE_URL",

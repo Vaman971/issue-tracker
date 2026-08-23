@@ -1,9 +1,14 @@
 import re
+import hashlib
+
+from dataclasses import asdict
 
 from app.rag.query_pipeline.stages.base import BaseQueryStage
 from app.rag.multi_query.base import BaseQueryExpander
+from app.rag.multi_query.schemas import ExpansionResult
 from app.rag.tracing.timer import Timer
 from app.rag.tracing.schema import QueryTrace
+from app.services.cache import cache_get_json, cache_set_json
 
 from app.rag.query_pipeline.schemas import QueryRequest, ProcessedQuery
 
@@ -122,6 +127,19 @@ class MultiQueryStage(BaseQueryStage):
 
         return True
 
+    @staticmethod
+    def _build_cache_key(query: str, signature: str) -> str:
+        """Cache key for one query's expansion.
+
+        The signature comes from the expander, so a different model or
+        alternative count cannot read another one's entries.
+        """
+        fingerprint = hashlib.sha1(
+            query.strip().lower().encode("utf-8")
+        ).hexdigest()[:16]
+
+        return f"multi-query:expansion:{signature}:{fingerprint}"
+
     async def process(
         self,
         request: QueryRequest,
@@ -136,9 +154,31 @@ class MultiQueryStage(BaseQueryStage):
 
         timer = Timer()
 
-        expansion = await self.expander.expand(
-            query=processed.search_queries[0],
+        # the first search query is always the original question
+        query = processed.search_queries[0]
+        cache_key = self._build_cache_key(
+            query,
+            self.expander.cache_signature,
         )
+
+        cached = await cache_get_json(cache_key)
+
+        if cached is not None:
+            # redis returns plain JSON, so rebuild the dataclass. .get() keeps
+            # an entry written by an older shape from breaking the turn.
+            expansion = ExpansionResult(
+                original_query=cached.get("original_query", query),
+                alternatives=cached.get("alternatives", []),
+            )
+            trace.multi_query.cache_hit = True
+        else:
+            expansion = await self.expander.expand(
+                query=query,
+            )
+
+            # asdict, because json.dumps cannot serialise a dataclass
+            await cache_set_json(cache_key, asdict(expansion))
+            trace.multi_query.cache_hit = False
 
         trace.multi_query.duration_ms = timer.elapsed_ms()
 
