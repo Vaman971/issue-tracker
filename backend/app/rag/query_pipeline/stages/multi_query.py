@@ -138,7 +138,7 @@ class MultiQueryStage(BaseQueryStage):
             query.strip().lower().encode("utf-8")
         ).hexdigest()[:16]
 
-        return f"multi-query:expansion:{signature}:{fingerprint}"
+        return f"rag:multi-query:expansion:{signature}:{fingerprint}"
 
     async def process(
         self,

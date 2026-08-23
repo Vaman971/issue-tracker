@@ -71,5 +71,6 @@ async def add_project_member(
 
     await cache_delete_pattern("projects:list:*")
     await cache_delete_pattern("issues:list:*")
+    await cache_delete_pattern("rag:search:*")
 
     return member

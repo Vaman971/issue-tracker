@@ -54,7 +54,7 @@ class CachedEmbedder(BaseEmbedding):
 
         digest = hashlib.sha256(text.encode()).hexdigest()
 
-        return f"embedding:{self.provider}:{self.model}:{digest}"
+        return f"rag:embedding:{self.provider}:{self.model}:{digest}"
 
     async def embed_text(
         self,

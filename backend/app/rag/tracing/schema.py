@@ -21,6 +21,11 @@ class RetrievalTrace:
 
     embedding_cache_misses: int = 0
 
+    # whole ranked lists served from cache, one count per search query
+    search_cache_hits: int = 0
+
+    search_cache_misses: int = 0
+
     duration_ms: float = 0.0
 
 

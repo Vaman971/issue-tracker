@@ -130,6 +130,7 @@ async def create_issue(
     db.expunge_all()
 
     await cache_delete_pattern("issues:list:*")
+    await cache_delete_pattern("rag:search:*")
 
     return await get_issue_or_404(issue_id=issue_id, db=db)
 
@@ -231,6 +232,7 @@ async def update_issue(
     await db.commit()
     db.expunge_all()
     await cache_delete_pattern("issues:list:*")
+    await cache_delete_pattern("rag:search:*")
 
     return await get_issue_or_404(issue_id=issue_id, db=db)
 
@@ -280,3 +282,4 @@ async def delete_issue(
     await db.commit()
 
     await cache_delete_pattern("issues:list:*")
+    await cache_delete_pattern("rag:search:*")
