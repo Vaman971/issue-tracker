@@ -112,6 +112,7 @@ async def update_user_role(
     await cache_delete_pattern("users:list:*")
     await cache_delete_pattern("projects:list:*")
     await cache_delete_pattern("issues:list:*")
+    await cache_delete_pattern("rag:search:*")
 
     return user
 

@@ -14,6 +14,17 @@ def _row(label: str, value) -> str:
     return f"{label:<{LABEL_WIDTH}} : {value}"
 
 
+def _executed(count: int, cache_hits: int) -> str:
+    """Zero results with cache hits means the retriever never ran.
+
+    Printing a bare 0 there reads as "found nothing" rather than
+    "did not need to look".
+    """
+    if count == 0 and cache_hits:
+        return "cached"
+    return str(count)
+
+
 def _heading(title: str, rule: str = MINOR) -> None:
     print(rule)
     print(title)
@@ -74,9 +85,20 @@ class TracePrinter:
             print()
 
         _heading("RETRIEVAL")
-        print(_row("Semantic Results", len(trace.query.retrieval.semantic_results)))
-        print(_row("Keyword Results", len(trace.query.retrieval.keyword_results)))
+        print(_row("Semantic Results", _executed(
+            len(trace.query.retrieval.semantic_results),
+            trace.query.retrieval.search_cache_hits,
+        )))
+        print(_row("Keyword Results", _executed(
+            len(trace.query.retrieval.keyword_results),
+            trace.query.retrieval.search_cache_hits,
+        )))
         print(_row("Merged Results", len(trace.query.retrieval.final_results)))
+        print(_row(
+            "Search Cache",
+            f"{trace.query.retrieval.search_cache_hits} hit / "
+            f"{trace.query.retrieval.search_cache_misses} miss",
+        ))
         print(_row(
             "Embedding Cache",
             f"{trace.query.retrieval.embedding_cache_hits} hit / "

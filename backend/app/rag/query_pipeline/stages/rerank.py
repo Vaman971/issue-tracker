@@ -49,7 +49,7 @@ class RerankStage(BaseQueryStage):
             ).encode()
         ).hexdigest()[:16]
 
-        return f"rerank:results:{signature}:{fingerprint}:{query}"
+        return f"rag:rerank:results:{signature}:{fingerprint}:{query}"
 
     @staticmethod
     def _rebuild_results(items: list) -> list[RerankResult]:

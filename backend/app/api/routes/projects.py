@@ -82,6 +82,7 @@ async def create_project(
     await db.commit()
 
     await cache_delete_pattern("projects:list:*")
+    await cache_delete_pattern("rag:search:*")
 
     return await get_project_or_404(project_id=project.id, db=db)
 
@@ -151,6 +152,7 @@ async def update_project(
     await db.commit()
 
     await cache_delete_pattern("projects:list:*")
+    await cache_delete_pattern("rag:search:*")
 
     return await get_project_or_404(project_id=project_id, db=db)
 
@@ -194,6 +196,7 @@ async def delete_project(
 
     await cache_delete_pattern("projects:list:*")
     await cache_delete_pattern("issues:list:*")
+    await cache_delete_pattern("rag:search:*")
 
 
 # ---------------------------------------------------------------------------
@@ -363,6 +366,7 @@ async def add_project_member(
 
     await cache_delete_pattern("projects:list:*")
     await cache_delete_pattern("issues:list:*")
+    await cache_delete_pattern("rag:search:*")
 
     return member
 
@@ -393,3 +397,4 @@ async def remove_project_member(
 
     await cache_delete_pattern("projects:list:*")
     await cache_delete_pattern("issues:list:*")
+    await cache_delete_pattern("rag:search:*")

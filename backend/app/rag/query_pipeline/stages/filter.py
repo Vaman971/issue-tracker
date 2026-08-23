@@ -35,7 +35,7 @@ class FilterStage(BaseQueryStage):
         fingerprint = hashlib.sha1(
             query.strip().lower().encode("utf-8")
         ).hexdigest()[:16]
-        return f"filter:extraction:{signature}:{fingerprint}"
+        return f"rag:filter:extraction:{signature}:{fingerprint}"
 
     @staticmethod
     def _rebuild_result(cached: dict, query: str) -> FilterResult:
