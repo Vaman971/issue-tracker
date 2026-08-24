@@ -7,33 +7,33 @@ from app.rag.memory.schemas import ChatMessage, ConversationState
 class BaseMemory(ABC):
 
     @abstractmethod
-    def add(
+    async def add(
         self,
         message: ChatMessage,
     ) -> None:
         pass
 
     @abstractmethod
-    def messages(
+    async def messages(
         self,
     ) -> list[ChatMessage]:
         pass
 
     @abstractmethod
-    def get_state(
+    async def get_state(
         self,
     ) -> ConversationState:
         pass
 
     @abstractmethod
-    def update_state(
+    async def update_state(
         self,
         state: ConversationState,
     ) -> None:
         pass
 
     @abstractmethod
-    def clear(
+    async def clear(
         self,
     ) -> None:
         pass

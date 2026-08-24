@@ -58,11 +58,11 @@ class RAGService:
         trace = RAGTrace(question=question)
 
         # prior turns only — the current question is passed separately
-        history = self.memory.messages() if self.memory else []
+        history = await self.memory.messages() if self.memory else []
         formatted_history = self.memory_formatter.format(history)
 
         # update memory state
-        state = self.memory.get_state() if self.memory else None
+        state = await self.memory.get_state() if self.memory else None
         reference_ids: list[int] = []
 
         if state and self.resolver:
@@ -84,7 +84,7 @@ class RAGService:
 
         # update the state of the memory
         if self.memory:
-            self.memory.update_state(
+            await self.memory.update_state(
                 ConversationState(
                     last_question=question,
                     last_rewritten_query=processed.rewritten_query,
@@ -155,13 +155,13 @@ class RAGService:
         # recorded only once generation succeeded, so a failed turn leaves no
         # half-written exchange behind
         if self.memory:
-            self.memory.add(
+            await self.memory.add(
                 ChatMessage(
                     role=MessageRole.USER,
                     content=question,
                 )
             )
-            self.memory.add(
+            await self.memory.add(
                 ChatMessage(
                     role=MessageRole.ASSISTANT,
                     content=answer,
