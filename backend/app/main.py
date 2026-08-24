@@ -19,6 +19,7 @@ from app.api.routes.labels import router as labels_router
 from app.api.routes.notifications import router as notifications_router
 from app.api.routes.project_member import router as project_member_router
 from app.api.routes.projects import router as project_router
+from app.api.routes.rag import router as rag_router
 from app.api.routes.search import router as search_router
 from app.api.routes.stats import router as stats_router
 from app.api.routes.users import router as user_router
@@ -115,6 +116,7 @@ app.include_router(notifications_router)
 app.include_router(activity_router)
 app.include_router(search_router)
 app.include_router(stats_router)
+app.include_router(rag_router)
 
 # Serve locally stored uploads at /files/<key>
 if settings.STORAGE_BACKEND == "local":
