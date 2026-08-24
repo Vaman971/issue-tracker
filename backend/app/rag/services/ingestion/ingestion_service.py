@@ -1,5 +1,8 @@
 import hashlib
 import asyncio
+import logging
+from dataclasses import dataclass
+from enum import StrEnum
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -14,6 +17,21 @@ from app.rag.repositories.issue_repository import IssueRepository
 from app.rag.repositories.rag_document_repository import RagDocumentRepository
 from app.rag.services.ingestion.schemas import PreparedIssue
 from app.rag.vector_store.pgvector_store import PGVectorStore
+
+
+logger = logging.getLogger(__name__)
+
+class PreparationStatus(StrEnum):
+    SKIPPED = "skipped"
+    CHANGED = "changed"
+    FAILED = "failed"
+
+
+@dataclass(frozen=True, slots=True)
+class PreparationResult:
+    status: PreparationStatus
+    prepared: PreparedIssue | None = None
+
 
 class IngestionService:
 
@@ -32,7 +50,7 @@ class IngestionService:
 
     async def _process_batch(self,
                              issues: list[Issue],
-        )-> None:
+        )-> dict[str, int]:
 
         # Prevent sending hundreds of requests to embedding model simultaneously.
         # Increase/decrease the value from config based on rate limits.
@@ -42,7 +60,7 @@ class IngestionService:
 
         async def worker(
                 issue: Issue,
-        )-> PreparedIssue | None:
+        )-> PreparationResult:
             async with semaphore:
                 return await self._prepare_issue(issue)
 
@@ -51,17 +69,38 @@ class IngestionService:
         # (subject to the semaphore limiting concurrency) and returns when every
         # coroutine completes — this lets us concurrently process many issues
         # while still awaiting overall completion before continuing.
-        prepared = await asyncio.gather(
+        results = await asyncio.gather(
             *(worker(issue) for issue in issues)
         )
 
-        for prepared_issue in prepared:
-            if prepared_issue is None:
+        checked = len(results)
+        skipped = sum(
+            result.status == PreparationStatus.SKIPPED
+            for result in results
+        )
+        changed = sum(
+            result.status == PreparationStatus.CHANGED
+            for result in results
+        )
+        failed = sum(
+            result.status == PreparationStatus.FAILED
+            for result in results
+        )
+
+        for result in results:
+            if result.prepared is None:
                 continue
 
-            await self._persist_issue(prepared_issue)
+            await self._persist_issue(result.prepared)
 
         await self.session.commit()
+
+        return {
+            "checked": checked,
+            "changed": changed,
+            "skipped": skipped,
+            "failed": failed,
+        }
 
     async def _persist_issue(
         self,
@@ -85,7 +124,7 @@ class IngestionService:
     async def _prepare_issue(
         self,
         issue: Issue,
-    ) -> PreparedIssue | None:
+    ) -> PreparationResult:
         document = self.mapper.to_document(issue)
         text = self.builder.build_issue(document)
 
@@ -102,18 +141,29 @@ class IngestionService:
         )
 
         if not needs_reindex:
-            print( f"Skipping Issue {issue.id}: unchanged.")
-            return
+            logger.info( f"Skipping Issue {issue.id}: unchanged.")
+            return PreparationResult(
+                status=PreparationStatus.SKIPPED,
+            )
 
         chunks = await self.chunker.chunk(text)
 
+        logger.info(f"Embedding Issue {issue.id}")
         # send all the chunks of an issue at once for embedding, this reduces no. of network calls
         embeddings = await self.embedder.embed_many(chunks)
 
         if not embeddings:
-            return
+            logger.error(
+                f"Failed to embed Issue {issue.id}: no embeddings returned."
+            )
 
-        return PreparedIssue(
+            return PreparationResult(
+                status=PreparationStatus.FAILED,
+            )
+
+        return PreparationResult(
+            status=PreparationStatus.CHANGED,
+            prepared = PreparedIssue(
             issue_id=issue.id,
             chunks=chunks,
             embeddings=embeddings,
@@ -126,6 +176,7 @@ class IngestionService:
             },
             provider=self.embedder.provider,
             model=self.embedder.model,
+            )
         )
 
     async def index_issue(
@@ -140,33 +191,54 @@ class IngestionService:
 
         prepared = await self._prepare_issue(issue)
 
-        if not prepared:
+        if not prepared.prepared:
             return
 
-        await self._persist_issue(prepared)
+        await self._persist_issue(prepared.prepared)
 
         await self.session.commit()
 
     async def index_all(
-            self,
-            batch_size: int = 100,
-    ) -> None:
+        self,
+        batch_size: int = 100,
+    ) -> dict[str, int]:
 
         total = await self.repository.count_issue()
 
-        print(f"Found {total} issues")
+        logger.info("Found %s issues", total)
 
         offset = 0
+
+        summary = {
+            "checked": 0,
+            "changed": 0,
+            "skipped": 0,
+            "failed": 0,
+        }
 
         while offset < total:
 
             issues = await self.repository.get_all_issues_in_batch(
                 offset=offset,
-                limit=batch_size
+                limit=batch_size,
             )
 
-            await self._process_batch(issues)
+            batch_summary = await self._process_batch(issues)
+
+            for key in summary:
+                summary[key] += batch_summary.get(key, 0)
 
             offset += len(issues)
 
-            print(f"Indexed {offset}/{total}")
+            logger.info(
+                "Completed %s/%s",
+                offset,
+                total,
+            )
+
+        logger.info(
+            "RAG ingestion complete: %s",
+            summary,
+        )
+
+        return summary

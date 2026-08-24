@@ -44,6 +44,9 @@ botocore
 # Prompt templating (RAG)
 jinja2
 
+# LLM & embeddings (RAG)
+openai
+
 # HTTP client & testing
 pytest
 pytest-cov
