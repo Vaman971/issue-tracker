@@ -9,20 +9,20 @@ class InMemoryMemory(BaseMemory):
         self._messages: list[ChatMessage] = []
         self._state = ConversationState()
 
-    def add(
+    async def add(
         self,
         message: ChatMessage,
     ) -> None:
 
         self._messages.append(message)
 
-    def messages(
+    async def messages(
         self,
     ) -> list[ChatMessage]:
 
         return self._messages.copy() # Never expose internal mutable state.
 
-    def get_state(
+    async def get_state(
         self,
     ) -> ConversationState:
 
@@ -32,7 +32,7 @@ class InMemoryMemory(BaseMemory):
             last_result_ids=self._state.last_result_ids.copy(),
         )
 
-    def update_state(
+    async def update_state(
         self,
         state: ConversationState,
     ) -> None:
@@ -43,7 +43,7 @@ class InMemoryMemory(BaseMemory):
             last_result_ids=state.last_result_ids.copy(),
         )
 
-    def clear(self):
+    async def clear(self):
 
         self._messages.clear()
         self._state = ConversationState()

@@ -105,3 +105,43 @@ Please start by acknowledging these instructions. When I give you the go-ahead, 
 * **Action:** Integrate these policies and present the updated code. Wait for my approval.
 
 ---
+---
+
+## DECISIONS LOG
+
+Answers to design questions raised during implementation, recorded here so
+they survive across sessions and are not re-litigated. Append a new entry
+whenever a blocking question is settled.
+
+### D1 — `BaseMemory` becomes async (Step 6.1/6.2)
+
+**Question:** `BaseMemory` is synchronous (`add`, `messages`, `get_state`,
+`update_state`, `clear`) and `RAGService` calls all of them without `await`.
+A Postgres-backed memory needs `await`. Change the contract, or keep it sync
+and persist outside the memory?
+
+**Decision:** Make `BaseMemory` async.
+
+**Consequences:**
+- `BaseMemory` abstract methods become `async def`.
+- `InMemoryMemory` becomes async (bodies unchanged, signatures awaited).
+- `RAGService.ask()` awaits 4 call sites: `messages()`, `get_state()`,
+  `update_state()`, `add()` (twice).
+- `ReferenceResolver.resolve()` stays sync — it is pure logic over a
+  `ConversationState` already in hand, it never touches storage.
+
+### D2 — Conversation state persisted as a JSON column (Step 6.1/6.2)
+
+**Question:** persist only the messages, or the `ConversationState` too?
+
+**Decision:** Store `ConversationState` as a JSON column on the conversation
+row, alongside the messages table.
+
+**Rationale:** `last_result_ids` is what makes reference follow-ups work
+("and the low priority ones?" scopes retrieval to the previous turn's
+entities). Persisting messages without it means a reloaded conversation
+answers follow-ups against the whole corpus instead of the referenced set.
+
+**Shape:** conversation row carries `state` (JSON, defaults to an empty
+`ConversationState`); messages live in a child table with role, content and
+timestamp.
