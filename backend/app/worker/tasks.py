@@ -12,6 +12,29 @@ from app.worker.celery_app import celery_app
 logger = logging.getLogger(__name__)
 
 
+def run_async(factory):
+    """Run an async task body, then release its database connections.
+
+    Each task calls asyncio.run(), which creates a fresh event loop. asyncpg
+    connections are bound to the loop that opened them, so a connection left
+    in the pool by one task is unusable by the next and fails with:
+
+        InterfaceError: cannot perform operation: another operation is in progress
+
+    Disposing inside the same loop closes them properly, so every task starts
+    with a clean pool.
+    """
+
+    async def _wrapped():
+        try:
+            return await factory()
+        finally:
+            from app.db.session import engine
+
+            await engine.dispose()
+
+    return asyncio.run(_wrapped())
+
 # ---------------------------------------------------------------------------
 # Email tasks
 # ---------------------------------------------------------------------------
@@ -151,7 +174,7 @@ def cleanup_expired_tokens():
             await session.commit()
         logger.info("cleanup_expired_tokens: done")
 
-    asyncio.run(_run())
+    run_async(_run)
 
 
 @celery_app.task(name="app.worker.tasks.cleanup_old_notifications")
@@ -177,4 +200,27 @@ def cleanup_old_notifications():
             await session.commit()
         logger.info("cleanup_old_notifications: done")
 
-    asyncio.run(_run())
+    run_async(_run)
+
+
+@celery_app.task(name="app.worker.tasks.refresh_embeddings")
+def refresh_embeddings():
+    """Incrementally refresh embeddings for changed issues"""
+    from app.db.session import AsyncSessionLocal
+    from app.rag.services.ingestion.ingestion_service import IngestionService
+
+    async def _run():
+        async with AsyncSessionLocal() as session:
+            service = IngestionService(session)
+
+            summary = await service.index_all(
+                batch_size=100,
+            )
+
+        logger.info("refresh_embeddings: done | %s", summary)
+
+        # returned so it lands in the result backend and Flower, instead of
+        # Celery reporting the task's implicit None
+        return summary
+
+    return run_async(_run)
