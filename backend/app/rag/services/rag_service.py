@@ -1,3 +1,6 @@
+from collections.abc import AsyncIterator
+from dataclasses import dataclass
+
 from app.rag.context.base import ContextBase
 from app.rag.llm.base import BaseLLM
 from app.rag.llm.pricing import estimate_cost
@@ -15,6 +18,21 @@ from app.rag.tracing.printer import TracePrinter
 from app.rag.tracing.timer import Timer
 
 ANSWER_TEMPLATE = "answer.j2"
+
+
+@dataclass(slots=True)
+class PreparedTurn:
+    """Everything a turn needs before the answer model is called.
+
+    Exists so ask() and ask_stream() share one implementation of the work
+    that precedes generation, rather than drifting apart.
+    """
+
+    question: str
+    prompt: str
+    context: list
+    trace: RAGTrace
+    total_timer: Timer
 
 class RAGService:
 
@@ -50,7 +68,8 @@ class RAGService:
         self.memory_formatter = memory_formatter or MemoryFormatter()
         self.resolver = resolver
 
-    async def ask (self, question: str) -> RAGResponse:
+    async def _prepare(self, question: str) -> PreparedTurn:
+        """Resolve references, run the query pipeline, build the prompt."""
 
         # To track total duration of a request
         total_timer = Timer()
@@ -120,26 +139,29 @@ class RAGService:
             prompt=prompt
         )
 
-        timer = Timer()
+        return PreparedTurn(
+            question=question,
+            prompt=prompt,
+            context=context,
+            trace=trace,
+            total_timer=total_timer,
+        )
 
-        chunks: list[str] = [] # chunks which user will see
-        ttft_ms = 0.0
-        usage = LLMUsage()
+    async def _finalise(
+        self,
+        prepared: PreparedTurn,
+        answer: str,
+        usage: LLMUsage,
+        ttft_ms: float,
+        ttlt_ms: float,
+    ) -> RAGResponse:
+        """Record the turn and persist it once generation has succeeded."""
 
-        async for delta in self.llm.stream(prompt, usage):
-
-            # first delta is the moment the user could start reading
-            if not chunks:
-                ttft_ms = timer.elapsed_ms()
-
-            chunks.append(delta)
-
-        answer = "".join(chunks)
-        
+        trace = prepared.trace
 
         trace.llm.ttft_ms = ttft_ms
-        trace.llm.ttlt_ms = timer.elapsed_ms()
-        trace.llm.duration_ms = trace.llm.ttlt_ms
+        trace.llm.ttlt_ms = ttlt_ms
+        trace.llm.duration_ms = ttlt_ms
 
         trace.llm.answer = answer
         trace.llm.model = usage.model or self.llm.model
@@ -158,7 +180,7 @@ class RAGService:
             await self.memory.add(
                 ChatMessage(
                     role=MessageRole.USER,
-                    content=question,
+                    content=prepared.question,
                 )
             )
             await self.memory.add(
@@ -168,15 +190,72 @@ class RAGService:
                 )
             )
 
-        trace.total_duration_ms = total_timer.elapsed_ms()
+        trace.total_duration_ms = prepared.total_timer.elapsed_ms()
 
         TracePrinter.print(trace)
 
         return RAGResponse(
             answer=answer,
-            context=context,
+            context=prepared.context,
             model=trace.llm.model,
             input_tokens=trace.llm.input_tokens,
             output_tokens=trace.llm.output_tokens,
             total_tokens=trace.llm.total_tokens,
+        )
+
+    async def ask(self, question: str) -> RAGResponse:
+        """Answer a question, returning the whole response at once."""
+
+        prepared = await self._prepare(question)
+
+        timer = Timer()
+        chunks: list[str] = []
+        ttft_ms = 0.0
+        usage = LLMUsage()
+
+        async for delta in self.llm.stream(prepared.prompt, usage):
+
+            # first delta is the moment the user could start reading
+            if not chunks:
+                ttft_ms = timer.elapsed_ms()
+
+            chunks.append(delta)
+
+        return await self._finalise(
+            prepared=prepared,
+            answer="".join(chunks),
+            usage=usage,
+            ttft_ms=ttft_ms,
+            ttlt_ms=timer.elapsed_ms(),
+        )
+
+    async def ask_stream(self, question: str) -> AsyncIterator[str]:
+        """Answer a question, yielding text as the model produces it.
+
+        The turn is persisted after the last token, so an abandoned stream
+        leaves no half-written exchange in the conversation.
+        """
+
+        prepared = await self._prepare(question)
+
+        timer = Timer()
+        chunks: list[str] = []
+        ttft_ms = 0.0
+        usage = LLMUsage()
+
+        async for delta in self.llm.stream(prepared.prompt, usage):
+
+            if not chunks:
+                ttft_ms = timer.elapsed_ms()
+
+            chunks.append(delta)
+
+            yield delta
+
+        await self._finalise(
+            prepared=prepared,
+            answer="".join(chunks),
+            usage=usage,
+            ttft_ms=ttft_ms,
+            ttlt_ms=timer.elapsed_ms(),
         )
