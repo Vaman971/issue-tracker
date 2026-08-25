@@ -6,17 +6,18 @@ from fastapi import APIRouter, Depends, Query, status
 from fastapi.responses import StreamingResponse
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.api.deps import get_current_user
+from app.api.rbac import require_rag_access
 from app.api.helpers.conversation_helper import (
     create_conversation,
     get_conversation_or_404,
     list_conversations,
     list_messages,
 )
-from app.api.helpers.rag_helper import build_rag_service
-from app.db.session import get_db
+from app.api.helpers.rag_helper import build_access_scope, build_rag_service
+from app.db.session import AsyncSessionLocal, get_db
 from app.models.conversation import Conversation
 from app.models.user import User
+from app.rag.filtering.schemas import AccessScope
 from app.schemas.rag import (
     ConversationMessageRead,
     ConversationRead,
@@ -57,28 +58,37 @@ async def _resolve_conversation(
 
 
 async def _stream_answer(
-    conversation: Conversation,
+    conversation_id: uuid.UUID,
     question: str,
-    db: AsyncSession,
+    access: AccessScope,
 ) -> AsyncIterator[str]:
-    """Emit the conversation id, then the answer as it is generated."""
+    """Emit the conversation id, then the answer as it is generated.
+
+    Opens its OWN session rather than reusing the request's. FastAPI closes a
+    `yield` dependency before the streaming body runs, so continuing to use
+    that session would operate on a closed connection and return a broken one
+    to the pool, breaking later unrelated requests.
+    """
 
     # sent first so a client that started without an id can attach the reply
     # to a conversation before any text arrives
     yield _event(
         {
             "type": "conversation",
-            "conversation_id": str(conversation.id),
+            "conversation_id": str(conversation_id),
         }
     )
 
-    service = build_rag_service(
-        conversation_id=conversation.id,
-        db=db,
-    )
+    async with AsyncSessionLocal() as session:
 
-    async for delta in service.ask_stream(question):
-        yield _event({"type": "delta", "text": delta})
+        service = build_rag_service(
+            conversation_id=conversation_id,
+            db=session,
+            access=access,
+        )
+
+        async for delta in service.ask_stream(question):
+            yield _event({"type": "delta", "text": delta})
 
     yield _event({"type": "done"})
 
@@ -86,7 +96,7 @@ async def _stream_answer(
 @router.post("/chat")
 async def chat(
     payload: RagChatRequest,
-    current_user: User = Depends(get_current_user),
+    current_user: User = Depends(require_rag_access),
     db: AsyncSession = Depends(get_db),
 ) -> StreamingResponse:
     """Ask a question and stream the answer back as it is generated."""
@@ -99,9 +109,12 @@ async def chat(
 
     return StreamingResponse(
         _stream_answer(
-            conversation=conversation,
+            # the id, not the ORM object: the request session closes before
+            # the body runs, leaving the instance detached
+            conversation_id=conversation.id,
             question=payload.question,
-            db=db,
+            # resolved here, while current_user is still attached
+            access=build_access_scope(current_user),
         ),
         media_type="text/event-stream",
         headers={
@@ -121,7 +134,7 @@ async def chat(
 async def get_conversations(
     skip: int = Query(0, ge=0),
     limit: int = Query(20, ge=1, le=100),
-    current_user: User = Depends(get_current_user),
+    current_user: User = Depends(require_rag_access),
     db: AsyncSession = Depends(get_db),
 ):
     """List the current user's conversations, most recently active first."""
@@ -140,7 +153,7 @@ async def get_conversations(
 )
 async def get_conversation_messages(
     conversation_id: uuid.UUID,
-    current_user: User = Depends(get_current_user),
+    current_user: User = Depends(require_rag_access),
     db: AsyncSession = Depends(get_db),
 ):
     """Full transcript of one conversation the user owns."""

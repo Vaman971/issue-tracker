@@ -25,3 +25,33 @@ def require_roles(*allowed_roles: UserRole):
         return current_user
     
     return role_checker
+
+# Every role may read from the RAG pipeline: it answers questions about issues,
+# it does not act on them. Listed explicitly rather than accepting "any
+# authenticated user" so that adding a future role is a deliberate grant.
+RAG_READ_ROLES = (
+    UserRole.ADMIN,
+    UserRole.PROJECT_LEADER,
+    UserRole.DEVELOPER,
+    UserRole.QA,
+    UserRole.VIEWER,
+)
+
+
+async def require_rag_access(
+    current_user: User = Depends(require_roles(*RAG_READ_ROLES)),
+) -> User:
+    """Authenticated, holding a role allowed to query RAG, and still active.
+
+    get_current_user validates the token and loads the user but does not look
+    at is_active, so a deactivated account keeps working until its token
+    expires. Checked here so a disabled user cannot query the corpus.
+    """
+
+    if not current_user.is_active:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Account is disabled",
+        )
+
+    return current_user

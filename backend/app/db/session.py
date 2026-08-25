@@ -10,7 +10,12 @@ from app.core.config import settings
 ## using create_async_engine because FAstApi routes, redis and asyncpg all are async operations and can reduce concurrency
 engine = create_async_engine(
     settings.DATABASE_URL,
-    echo=settings.SQL_ECHO # it prints generated sql queries to the terminal (disable in production)
+    echo=settings.SQL_ECHO, # it prints generated sql queries to the terminal (disable in production)
+    # A client abandoning a streamed response cancels the handler mid-query,
+    # which can return a dead connection to the pool and break the NEXT,
+    # unrelated request. pre_ping validates a connection on checkout and
+    # transparently replaces it if it has gone away.
+    pool_pre_ping=True,
 )
 
 # session represents one unit of database interaction (conversation with the database)

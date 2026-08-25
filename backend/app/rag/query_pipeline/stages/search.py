@@ -7,7 +7,7 @@ from app.rag.query_pipeline.stages.base import BaseQueryStage
 from app.rag.retrievers.base import BaseRetriever
 from app.rag.retrievers.rrf import fuse
 from app.rag.retrievers.schemas import SearchResult
-from app.rag.filtering.schemas import SearchFilters
+from app.rag.filtering.schemas import AccessScope, SearchFilters
 from app.rag.tracing.timer import Timer
 from app.rag.tracing.schema import QueryTrace
 
@@ -34,7 +34,8 @@ class SearchStage(BaseQueryStage):
         query: str,
         top_k: int,
         filters: SearchFilters,
-        entity_ids: list[int]
+        entity_ids: list[int],
+        access: AccessScope | None,
     ):
         filter_data = {
             "status": filters.status,
@@ -53,6 +54,15 @@ class SearchStage(BaseQueryStage):
             # sorted: the same set of ids is the same search however it
             # happens to be ordered
             "entity_ids": sorted(entity_ids),
+            # MUST be part of the key: two users asking the same question
+            # see different documents, so sharing an entry would leak one
+            # user's results to another. Unscoped and admin requests are
+            # keyed together because they run the identical query.
+            "access": (
+                "all"
+                if access is None or access.is_admin
+                else f"user:{access.user_id}"
+            ),
             },
             sort_keys=True,
             default=str
@@ -102,6 +112,7 @@ class SearchStage(BaseQueryStage):
             self.top_k,
             processed.filters,
             entity_ids,
+            request.access,
         )
 
         cached = await cache_get_json(key)
@@ -117,6 +128,7 @@ class SearchStage(BaseQueryStage):
             trace=trace.retrieval,
             # entities the previous turn returned
             entity_ids=entity_ids or None,
+            access=request.access,
         )
 
         await cache_set_json(key, [asdict(result) for result in results])

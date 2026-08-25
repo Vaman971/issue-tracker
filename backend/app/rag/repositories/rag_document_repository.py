@@ -3,8 +3,8 @@ from sqlalchemy.dialects.postgresql import TSQUERY
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.rag_document import RagDocument
-from app.rag.filtering.conditions import build_conditions
-from app.rag.filtering.schemas import SearchFilters
+from app.rag.filtering.conditions import build_access_conditions, build_conditions
+from app.rag.filtering.schemas import AccessScope, SearchFilters
 
 class RagDocumentRepository:
     def __init__(
@@ -38,6 +38,7 @@ class RagDocumentRepository:
         limit: int,
         filters: SearchFilters | None = None,
         entity_ids: list[int] | None = None,
+        access: AccessScope | None = None,
     ):
         document_vector = func.to_tsvector(
             "english",
@@ -49,6 +50,10 @@ class RagDocumentRepository:
             if entity_ids
             else []
         )
+
+        # the OR fallback below repeats the WHERE clause, so visibility is
+        # built once here and applied to both passes
+        visible = build_access_conditions(access)
 
         # First try the stricter AND query.
         and_query = func.plainto_tsquery(
@@ -68,6 +73,7 @@ class RagDocumentRepository:
                 document_vector.op("@@")(and_query),
                 *build_conditions(filters),
                 *scope,
+                *visible,
             )
             .order_by(desc("rank"))
             .limit(limit)
@@ -103,6 +109,7 @@ class RagDocumentRepository:
                 document_vector.op("@@")(or_query),
                 *build_conditions(filters),
                 *scope,
+                *visible,
             )
             .order_by(desc("rank"))
             .limit(limit)

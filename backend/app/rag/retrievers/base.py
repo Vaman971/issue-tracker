@@ -1,6 +1,6 @@
 from abc import ABC, abstractmethod
 
-from app.rag.filtering.schemas import SearchFilters
+from app.rag.filtering.schemas import AccessScope, SearchFilters
 from app.rag.retrievers.schemas import SearchResult
 from app.rag.tracing.schema import RetrievalTrace
 
@@ -14,6 +14,7 @@ class BaseRetriever(ABC):
         trace: RetrievalTrace | None = None,
         filters: SearchFilters | None = None,
         entity_ids: list[int] | None = None,
+        access: AccessScope | None = None,
     ) -> list[SearchResult]:
         """Return the top_k results for `query`.
 

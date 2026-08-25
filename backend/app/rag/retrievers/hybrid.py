@@ -6,7 +6,7 @@ from app.rag.retrievers.base import BaseRetriever
 from app.rag.retrievers.pgvector_retriever import PGVectorRetriever
 from app.rag.repositories.rag_document_repository import RagDocumentRepository
 
-from app.rag.filtering.schemas import SearchFilters
+from app.rag.filtering.schemas import AccessScope, SearchFilters
 from app.rag.retrievers.rrf import fuse
 from app.rag.retrievers.schemas import SearchResult
 from app.rag.tracing.schema import RetrievalTrace
@@ -28,6 +28,7 @@ class HybridRetriever(BaseRetriever):
         trace: RetrievalTrace | None = None,
         filters: SearchFilters | None = None,
         entity_ids: list[int] | None = None,
+        access: AccessScope | None = None,
     ) -> list[SearchResult]:
 
         async with self.session_factory() as session:
@@ -47,6 +48,7 @@ class HybridRetriever(BaseRetriever):
                 trace=trace,
                 filters=filters,
                 entity_ids=entity_ids,
+                access=access,
             )
 
             rows = await keyword_retriever.keyword_search(
@@ -54,6 +56,7 @@ class HybridRetriever(BaseRetriever):
                 limit=top_k,
                 filters=filters,
                 entity_ids=entity_ids,
+                access=access,
             )
 
             # ts_rank is the keyword relevance score; the ORM row itself has none

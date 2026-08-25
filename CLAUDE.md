@@ -145,3 +145,85 @@ answers follow-ups against the whole corpus instead of the referenced set.
 **Shape:** conversation row carries `state` (JSON, defaults to an empty
 `ConversationState`); messages live in a child table with role, content and
 timestamp.
+
+### D3 — RAG retrieval is scoped to project visibility (Step 6.4 follow-on)
+
+**Question:** the roadmap defers "granular resource-level blocking", but the
+RAG corpus spans every issue while the REST API enforces per-project
+visibility. A `viewer` can therefore ask the chatbot about projects they
+cannot open directly.
+
+**Decision:** implement visibility scoping now rather than later, because the
+gap is exploitable through the chatbot.
+
+**Rule to mirror** (same as `_can_view_project` in `routes/projects.py`):
+admin sees everything; everyone else sees projects they lead
+(`Project.leader_id`) or belong to (`project_members` row).
+
+**Approach:** enforce it *inside retrieval*, not as a post-filter, so the
+model never receives documents the user may not see.
+
+- `AccessScope` (`user_id`, `is_admin`) in `app/rag/filtering/schemas.py`.
+- `build_access_conditions()` in `app/rag/filtering/conditions.py`, alongside
+  the existing `build_conditions()`. Returns a SQL **subquery** condition
+  (`RagDocument.entity_id.in_(select(Issue.id).where(...))`) rather than a
+  materialised id list, which would be unbounded.
+- Threaded like the existing `filters` / `entity_ids` params:
+  `BaseRetriever.search(..., access=...)` -> `PGVectorRetriever`,
+  `RagDocumentRepository.keyword_search`, `HybridRetriever`.
+- `QueryRequest.access` carries it into `SearchStage`.
+- `RAGService.__init__(access=...)`, built per request in `rag_helper`.
+- Rows whose `entity_type` is not `issue` are excluded when a scope is
+  present: deny-by-default, since a future entity type needs its own rule.
+
+**CRITICAL:** the search-stage cache key MUST include the access scope.
+`rag:search:*` entries are keyed on query+filters+entity_ids today; without
+the scope, one user's cached results would be served to another — a worse
+leak than the one being fixed.
+
+---
+
+## PROGRESS
+
+- **6.1 & 6.2 — DONE, approved.** `conversations` + `conversation_messages`
+  tables (UUID pk, JSONB `state`), migration `ab83738a90d3`,
+  `conversation_helper.py`, `PostgresMemory`, `BaseMemory` made async.
+- **6.3 & 6.5 — DONE, approved.** `routes/rag.py` with `POST /rag/chat`
+  (SSE streaming), `GET /rag/conversations`,
+  `GET /rag/conversations/{id}/messages`. `RAGService` split into
+  `_prepare` / `_finalise` so `ask()` and `ask_stream()` share one path.
+- **6.4 — DONE, approved.** `require_rag_access` in `rbac.py` (all roles may
+  read; adds the `is_active` check that `get_current_user` lacks).
+  Two bugs fixed: the stream now opens its own session (FastAPI closes
+  `yield` deps before the streaming body runs), and `pool_pre_ping=True`
+  guards against abandoned streams poisoning pooled connections.
+- **D3 visibility scoping — DONE, awaiting review.** Implemented exactly as
+  designed above. `AccessScope` + `build_access_conditions()`; `access`
+  threaded through `BaseRetriever.search` -> `PGVectorRetriever` /
+  `HybridRetriever` / `keyword_search` (both the AND and OR passes),
+  `QueryRequest.access`, `RAGService(access=...)`, `build_access_scope(user)`
+  in `rag_helper`, resolved in the route while `current_user` is still
+  attached. The search cache key now carries `"access"`; unscoped and admin
+  requests share a key because they run the identical query.
+
+  Verified: rendered SQL is a subquery, not an id list; cache keys differ per
+  user and are stable per user; a developer in one project retrieves only that
+  project while an admin reaches 33; end to end, "session tokens dropped or
+  not invalidated" returns 5 issues from 5 projects to the admin and only
+  `issue:2720` to the developer — none of the 59 corpus-wide
+  "Session token not invalidated on logout" issues leaked.
+
+  Downstream caches were checked for the same class of leak: `rag:rerank:*`
+  keys on a fingerprint of the candidate set, so a shared key implies
+  identical candidates; the filter and multi-query caches hold no documents.
+- **Next after D3:** 6.6 graceful error handling, then 6.7 telemetry.
+
+### Standing gotchas
+
+- `alembic revision --autogenerate` proposes dropping `idx_rag_documents_fts`,
+  `uq_rag_document_entity_chunk` and both `ix_issue_assignees_*` indexes —
+  they come from hand-written migrations and are absent from the models.
+  Strip those lines from every generated migration.
+- `migrate`, `celery-beat` and `flower` build their own images. Use
+  `docker compose build` with no service name when dependencies change.
+- `get_current_user` does not check `is_active`; only the RAG routes do.
