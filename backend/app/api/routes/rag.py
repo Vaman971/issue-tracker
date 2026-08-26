@@ -34,6 +34,7 @@ from app.schemas.rag import (
     ConversationRead,
     RagChatRequest,
 )
+from app.services.rate_limit import build_rate_limit_key, enforce_rate_limit
 
 logger = logging.getLogger(__name__)
 
@@ -67,6 +68,29 @@ async def _guarded(awaitable: Awaitable[T]) -> T:
 
     except Exception as exc:
         raise translate(exc, fallback=DatabaseError) from exc
+
+
+async def _enforce_chat_rate_limit(user: User) -> None:
+    """Cap how often one user may ask a question.
+
+    Keyed on the user rather than the client IP: the endpoint is
+    authenticated, and each call spends real money on embeddings, reranking
+    and generation, so the account is the axis that matters.
+
+    Not reset on success, unlike the login limiter. There the reset stops a
+    legitimate user being locked out by their own typos; here every request
+    is a real cost and should count.
+
+    `enforce_rate_limit` fails open when Redis is unreachable, which matches
+    how the rest of the RAG path treats an unavailable cache.
+    """
+
+    await enforce_rate_limit(
+        key=build_rate_limit_key("rag", "chat", str(user.id)),
+        max_attempts=settings.RAG_RATE_LIMIT_MAX_REQUESTS,
+        window_seconds=settings.RAG_RATE_LIMIT_WINDOW_SECONDS,
+        detail="Too many questions. Please wait a moment before asking another.",
+    )
 
 
 def _clean_question(question: str) -> str:
@@ -191,8 +215,13 @@ async def chat(
     event, because by then the status line has already been sent.
     """
 
-    # before the conversation is created, so a blank question leaves no row
+    # validation first: rejecting a blank question is free, and the limit is
+    # justified by what a request costs, so a request that reaches no model
+    # should not spend budget. Both run before the conversation is created,
+    # so a rejected request leaves no row behind.
     question = _clean_question(payload.question)
+
+    await _enforce_chat_rate_limit(current_user)
 
     conversation = await _resolve_conversation(
         payload=payload,

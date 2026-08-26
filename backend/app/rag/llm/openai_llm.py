@@ -2,15 +2,15 @@ from collections.abc import AsyncIterator
 
 from app.core.config import settings
 from app.rag.llm.base import BaseLLM
+from app.rag.llm.client import build_openai_client
 from app.rag.llm.schemas import LLMResponse, LLMUsage
 
 from typing import cast, Any
-from openai import AsyncOpenAI
 
 
 class OpenAILLM(BaseLLM):
     def __init__(self) -> None:
-        self.client = AsyncOpenAI(api_key=settings.OPENAI_API_KEY)
+        self.client = build_openai_client()
         self.model = settings.OPENAI_ANSWER_MODEL
 
     async def generate(self, prompt: str) -> LLMResponse:

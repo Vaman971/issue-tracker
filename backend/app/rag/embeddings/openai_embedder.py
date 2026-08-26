@@ -1,16 +1,14 @@
-from openai import AsyncOpenAI
 
 from app.core.config import settings
 
 from app.rag.chunkers.schemas import Chunk
 from app.rag.embeddings.base import BaseEmbedding
 from app.rag.embeddings.schemas import EmbeddingResult, EmbeddingStats
+from app.rag.llm.client import build_openai_client
 
 class OpenAiEmbedder(BaseEmbedding):
     def __init__(self):
-        self.client = AsyncOpenAI(
-            api_key=settings.OPENAI_API_KEY,
-        )
+        self.client = build_openai_client()
         self._model = settings.OPENAI_EMBEDDING_MODEL
     
     @property

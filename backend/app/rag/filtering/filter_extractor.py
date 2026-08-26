@@ -3,9 +3,9 @@ from app.rag.prompts.loader import PromptTemplateLoader
 from app.rag.filtering.schemas import FilterResult, SearchFilters
 
 from app.core.config import settings
+from app.rag.llm.client import build_openai_client
 
 from typing import cast, Any
-from openai import AsyncOpenAI
 import json
 
 
@@ -30,9 +30,7 @@ class OpenAIFilterExtractor(BaseFilterExtractor):
         prompt_loader: PromptTemplateLoader,
     ) -> None:
 
-        self.client = AsyncOpenAI(
-            api_key=settings.OPENAI_API_KEY,
-        )
+        self.client = build_openai_client()
 
         self.prompt_loader = prompt_loader
 

@@ -82,8 +82,39 @@ class Settings(BaseSettings):
     DAMPING_CONSTANT: int = 30
 
     # Ceiling on one /rag/chat turn, covering retrieval and generation.
-    # Step 7.1 adds per-downstream timeouts underneath this one.
+    # The per-downstream timeouts below sit underneath it.
     RAG_REQUEST_TIMEOUT_SECONDS: int = 120
+
+    # Per-call ceiling on any OpenAI request, and how many times the SDK
+    # retries one with exponential backoff before giving up. Both are applied
+    # in `app/rag/llm/client.py`, which every adapter builds its client from.
+    #
+    # Sized so one call's COMPLETE retry chain fits inside the turn ceiling:
+    # 30 * (2 + 1) = 90s < 120s. Generous against observed latencies — the
+    # slowest stage runs about 5s — so the budget only matters when something
+    # is genuinely wrong. A turn runs roughly four sequential model calls, so
+    # if several each burn their chain the turn ceiling cuts the request off,
+    # which is the intended strict behaviour.
+    OPENAI_TIMEOUT_SECONDS: int = 30
+    OPENAI_MAX_RETRIES: int = 2
+
+    # How long to wait for a database connection to be established. Deliberately
+    # not a query timeout: ingestion runs long statements through this engine.
+    DB_CONNECT_TIMEOUT_SECONDS: int = 10
+
+    # Redis reconnect policy. A turn consults the cache roughly fifteen times,
+    # so every second spent failing is multiplied by fifteen. Measured: at 2
+    # retries against the 3s healthcheck timeout a turn took 77s with Redis
+    # down versus 15s with it up. Hence a connect timeout of its own, an order
+    # of magnitude shorter than the healthcheck's, and a single retry.
+    REDIS_CONNECT_TIMEOUT_SECONDS: float = 0.5
+    REDIS_RETRY_ATTEMPTS: int = 1
+    REDIS_RETRY_BACKOFF_CAP_SECONDS: float = 0.1
+
+    # Requests one user may make to /rag/chat per window. Per user, not per IP:
+    # the endpoint is authenticated and each call costs real money.
+    RAG_RATE_LIMIT_WINDOW_SECONDS: int = 60
+    RAG_RATE_LIMIT_MAX_REQUESTS: int = 10
 
     @field_validator(
         "DATABASE_URL",
@@ -108,6 +139,11 @@ class Settings(BaseSettings):
         "AUTH_RATE_LIMIT_REGISTER_MAX_ATTEMPTS",
         "AUTH_RATE_LIMIT_REFRESH_MAX_ATTEMPTS",
         "RAG_REQUEST_TIMEOUT_SECONDS",
+        "OPENAI_TIMEOUT_SECONDS",
+        "OPENAI_MAX_RETRIES",
+        "DB_CONNECT_TIMEOUT_SECONDS",
+        "RAG_RATE_LIMIT_WINDOW_SECONDS",
+        "RAG_RATE_LIMIT_MAX_REQUESTS",
     )
     @classmethod
     def positive_numbers_only(cls, value: int) -> int:
