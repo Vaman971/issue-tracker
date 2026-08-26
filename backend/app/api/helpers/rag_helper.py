@@ -101,6 +101,7 @@ def build_rag_service(
     conversation_id: uuid.UUID,
     db: AsyncSession,
     access: AccessScope,
+    request_id: str | None = None,
 ) -> RAGService:
     """A RAGService bound to one conversation's persisted memory."""
 
@@ -117,4 +118,6 @@ def build_rag_service(
         ),
         resolver=ReferenceResolver(),
         access=access,
+        request_id=request_id,
+        conversation_id=conversation_id,
     )

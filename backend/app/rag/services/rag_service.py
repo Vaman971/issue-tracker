@@ -1,3 +1,4 @@
+import uuid
 from collections.abc import AsyncIterator
 from dataclasses import dataclass
 
@@ -22,6 +23,7 @@ from app.rag.query_pipeline.schemas import QueryRequest
 from app.rag.services.schema import RAGResponse
 from app.rag.tracing.schema import PromptTrace, RAGTrace
 from app.rag.tracing.printer import TracePrinter
+from app.rag.tracing.telemetry import build_record, emit
 from app.rag.tracing.timer import Timer
 
 ANSWER_TEMPLATE = "answer.j2"
@@ -63,6 +65,10 @@ class RAGService:
 
         access: AccessScope | None = None,
 
+        request_id: str | None = None,
+
+        conversation_id: uuid.UUID | None = None,
+
     ) -> None:
 
         # owns rewriting, filtering and retrieval
@@ -80,6 +86,11 @@ class RAGService:
         # whose visibility retrieval is confined to; None retrieves the
         # whole corpus, which only the CLI and eval harness should do
         self.access = access
+
+        # telemetry only: captured by the route while the request context is
+        # still live, since a streaming body outlives it
+        self.request_id = request_id
+        self.conversation_id = conversation_id
 
     async def _prepare(self, question: str) -> PreparedTurn:
         """Everything before generation, reporting failures as a RagError.
@@ -243,7 +254,16 @@ class RAGService:
 
         trace.total_duration_ms = prepared.total_timer.elapsed_ms()
 
-        TracePrinter.print(trace)
+        # TracePrinter.print(trace) # emit serves the purpose
+
+        # after total_duration_ms is set, so the record is complete
+        emit(
+            build_record(
+                trace,
+                request_id=self.request_id,
+                conversation_id=self.conversation_id,
+            )
+        )
 
         return RAGResponse(
             answer=answer,
