@@ -1,4 +1,5 @@
 import logging
+import socket
 from contextlib import asynccontextmanager
 from pathlib import Path
 from uuid import uuid4
@@ -8,6 +9,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from fastapi.staticfiles import StaticFiles
 from sqlalchemy import text
+from sqlalchemy.exc import SQLAlchemyError
 
 from app.api.routes.activity import router as activity_router
 from app.api.routes.admin import router as admin_router
@@ -28,6 +30,7 @@ from app.core.logging import setup_logging
 from app.core.redis import close_redis_client, ping_redis
 from app.core.request_context import request_id_context
 from app.db.session import engine
+from app.rag.exceptions import DatabaseError, RagError
 
 logger = logging.getLogger(__name__)
 
@@ -97,6 +100,50 @@ async def request_logging_middleware(request: Request, call_next):
 
     request_id_context.reset(token)
     return response
+
+
+@app.exception_handler(RagError)
+async def rag_error_handler(_request: Request, exc: RagError) -> JSONResponse:
+    """Report a RAG failure that happened before the response started.
+
+    Once tokens are streaming the route reports errors as SSE events instead
+    — a handler cannot change a status line that has already been sent.
+    """
+
+    logger.warning("RAG request failed | code=%s | %s", exc.code, exc.message)
+
+    return JSONResponse(
+        status_code=exc.status_code,
+        # `detail` matches the shape HTTPException produces elsewhere, so
+        # clients parse one error format; `code` is the stable identifier
+        content={"detail": exc.message, "code": exc.code},
+    )
+
+async def database_error_handler(_request: Request, _exc: Exception) -> JSONResponse:
+    """An unreachable database is 503, not an unhandled 500.
+
+    Registered app-wide rather than on the RAG router because the failure
+    usually lands in the auth dependency, which runs before any route body
+    and so before that router's own guards.
+
+    Three exception types, because a database outage arrives as three
+    different shapes: SQLAlchemyError for a query that fails mid-flight, and
+    — since asyncpg raises at the socket layer before SQLAlchemy wraps
+    anything — ConnectionError when the port is closed and socket.gaierror
+    when the host does not resolve. Registered narrowly rather than on OSError
+    so a genuine file-I/O bug still surfaces as the 500 it is.
+    """
+
+    logger.exception("Database unavailable")
+
+    return JSONResponse(
+        status_code=DatabaseError.status_code,
+        content={"detail": DatabaseError.message, "code": DatabaseError.code},
+    )
+
+
+for _database_failure in (SQLAlchemyError, ConnectionError, socket.gaierror):
+    app.add_exception_handler(_database_failure, database_error_handler)
 
 
 # ---------------------------------------------------------------------------

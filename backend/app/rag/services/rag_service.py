@@ -2,6 +2,12 @@ from collections.abc import AsyncIterator
 from dataclasses import dataclass
 
 from app.rag.context.base import ContextBase
+from app.rag.exceptions import (
+    LLMError,
+    PersistenceError,
+    RetrievalError,
+    translate,
+)
 from app.rag.filtering.schemas import AccessScope
 from app.rag.llm.base import BaseLLM
 from app.rag.llm.pricing import estimate_cost
@@ -76,6 +82,20 @@ class RAGService:
         self.access = access
 
     async def _prepare(self, question: str) -> PreparedTurn:
+        """Everything before generation, reporting failures as a RagError.
+
+        Reading history, embedding, retrieval and reranking all happen in
+        here, so anything that escapes is a retrieval-phase failure unless
+        `translate` recognises it as something more specific.
+        """
+
+        try:
+            return await self._build_turn(question)
+
+        except Exception as exc:
+            raise translate(exc, fallback=RetrievalError) from exc
+
+    async def _build_turn(self, question: str) -> PreparedTurn:
         """Resolve references, run the query pipeline, build the prompt."""
 
         # To track total duration of a request
@@ -163,7 +183,30 @@ class RAGService:
         ttft_ms: float,
         ttlt_ms: float,
     ) -> RAGResponse:
-        """Record the turn and persist it once generation has succeeded."""
+        """Record the turn once generation has succeeded.
+
+        Failures here are reported separately from the retrieval and
+        generation phases: by this point the answer exists and, when
+        streaming, has already reached the caller.
+        """
+
+        try:
+            return await self._record_turn(
+                prepared, answer, usage, ttft_ms, ttlt_ms
+            )
+
+        except Exception as exc:
+            raise translate(exc, fallback=PersistenceError) from exc
+
+    async def _record_turn(
+        self,
+        prepared: PreparedTurn,
+        answer: str,
+        usage: LLMUsage,
+        ttft_ms: float,
+        ttlt_ms: float,
+    ) -> RAGResponse:
+        """Write the trace, persist the exchange, build the response."""
 
         trace = prepared.trace
 
@@ -221,13 +264,17 @@ class RAGService:
         ttft_ms = 0.0
         usage = LLMUsage()
 
-        async for delta in self.llm.stream(prepared.prompt, usage):
+        try:
+            async for delta in self.llm.stream(prepared.prompt, usage):
 
-            # first delta is the moment the user could start reading
-            if not chunks:
-                ttft_ms = timer.elapsed_ms()
+                # first delta is the moment the user could start reading
+                if not chunks:
+                    ttft_ms = timer.elapsed_ms()
 
-            chunks.append(delta)
+                chunks.append(delta)
+
+        except Exception as exc:
+            raise translate(exc, fallback=LLMError) from exc
 
         return await self._finalise(
             prepared=prepared,
@@ -251,14 +298,20 @@ class RAGService:
         ttft_ms = 0.0
         usage = LLMUsage()
 
-        async for delta in self.llm.stream(prepared.prompt, usage):
+        try:
+            async for delta in self.llm.stream(prepared.prompt, usage):
 
-            if not chunks:
-                ttft_ms = timer.elapsed_ms()
+                if not chunks:
+                    ttft_ms = timer.elapsed_ms()
 
-            chunks.append(delta)
+                chunks.append(delta)
 
-            yield delta
+                yield delta
+
+        # GeneratorExit and CancelledError derive from BaseException, so a
+        # client that hangs up is not reported as a model failure
+        except Exception as exc:
+            raise translate(exc, fallback=LLMError) from exc
 
         await self._finalise(
             prepared=prepared,

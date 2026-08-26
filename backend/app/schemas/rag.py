@@ -9,7 +9,10 @@ from app.rag.memory.schemas import MessageRole
 class RagChatRequest(BaseModel):
     """A question, optionally continuing an existing conversation."""
 
-    question: str = Field(min_length=1, max_length=2000)
+    # no min_length: the route trims and rejects blanks itself, so "" and
+    # "   " get the same clean 400 rather than one pydantic blob and one
+    # readable message
+    question: str = Field(max_length=2000)
 
     # omitted on the first turn; a new conversation is created and its id is
     # returned as the first streamed event

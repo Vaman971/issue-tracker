@@ -216,7 +216,56 @@ leak than the one being fixed.
   Downstream caches were checked for the same class of leak: `rag:rerank:*`
   keys on a fingerprint of the candidate set, so a shared key implies
   identical candidates; the filter and multi-query caches hold no documents.
-- **Next after D3:** 6.6 graceful error handling, then 6.7 telemetry.
+- **6.6 — DONE, awaiting review.** `app/rag/exceptions.py`: `RagError` base
+  (`status_code` / `code` / `message`) with `EmptyQuestionError` 400,
+  `RetrievalError` 503, `LLMError` 503, `DatabaseError` 503,
+  `PersistenceError` 500, `RagTimeoutError` 504, plus `translate(exc,
+  fallback)` which classifies by exception type first and by phase second.
+
+  Errors split by *when* they happen, because a stream cannot change a status
+  line it has already sent:
+  - before the response starts -> real HTTP status, via the `RagError`
+    handler in `main.py`
+  - after -> an SSE `{"type": "error", "code", "message"}` event
+
+  `RAGService` classifies by phase: `_prepare` wraps `_build_turn`
+  (retrieval), the two generation loops wrap the LLM, `_finalise` wraps
+  `_record_turn` (persistence). Each is a thin wrapper so the existing bodies
+  did not have to be reindented. `except Exception` deliberately, so
+  `GeneratorExit` / `CancelledError` from a client hanging up are not
+  reported as model failures.
+
+  `RAG_REQUEST_TIMEOUT_SECONDS` (120) caps a whole turn via
+  `asyncio.timeout` in the stream body. Step 7.1 adds per-downstream
+  timeouts underneath it.
+
+  Verified by forcing every mode: `llm_unavailable` (0 deltas),
+  `retrieval_unavailable` (0), `database_unavailable` (0),
+  `not_persisted` (88 deltas — answer delivered, write failed),
+  `timeout` (11 deltas), and pre-stream 400 / 404 / 422 / 401.
+  Redis stopped -> the request still answers, uncached.
+- **Next:** 6.7 telemetry, then Phase 7.
+
+### 6.6 findings worth keeping
+
+- **A database outage is not a `SQLAlchemyError`.** asyncpg raises at the
+  socket layer before SQLAlchemy's DBAPI wrapping, so a stopped Postgres
+  arrives as `socket.gaierror` and a closed port as `ConnectionRefusedError`
+  — both plain `OSError`s. `translate()` and the `main.py` handler cover all
+  three shapes; registering on `OSError` wholesale was rejected so a real
+  file-I/O bug still surfaces as a 500.
+- **The RAG router cannot catch its own database failures.** With Postgres
+  down the request dies in `get_current_user` (`app/api/deps.py:47`), which
+  runs before any route body. That is why the handler is registered app-wide
+  rather than on the router — it changes every route's behaviour, deliberately.
+- **`min_length=1` was removed from `RagChatRequest.question`.** It made `""`
+  a pydantic 422 blob while `"   "` got the clean 400. The route trims and
+  rejects both identically now.
+- **Celery is not in the `/rag/chat` path at all.** The roadmap lists
+  "Celery unavailable" under 6.6, but a chat request never enqueues a task —
+  Celery serves attachments, auth email and the background embedding refresh.
+  An unavailable worker means embeddings go stale, not that a chat fails, so
+  no handler was written for it. Revisit if a RAG route ever enqueues work.
 
 ### Standing gotchas
 

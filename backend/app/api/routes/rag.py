@@ -1,8 +1,11 @@
+import asyncio
 import json
+import logging
 import uuid
-from collections.abc import AsyncIterator
+from collections.abc import AsyncIterator, Awaitable
+from typing import TypeVar
 
-from fastapi import APIRouter, Depends, Query, status
+from fastapi import APIRouter, Depends, HTTPException, Query
 from fastapi.responses import StreamingResponse
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -14,15 +17,26 @@ from app.api.helpers.conversation_helper import (
     list_messages,
 )
 from app.api.helpers.rag_helper import build_access_scope, build_rag_service
+from app.core.config import settings
 from app.db.session import AsyncSessionLocal, get_db
 from app.models.conversation import Conversation
 from app.models.user import User
+from app.rag.exceptions import (
+    DatabaseError,
+    EmptyQuestionError,
+    RagError,
+    translate,
+)
 from app.rag.filtering.schemas import AccessScope
 from app.schemas.rag import (
     ConversationMessageRead,
     ConversationRead,
     RagChatRequest,
 )
+
+logger = logging.getLogger(__name__)
+
+T = TypeVar("T")
 
 router = APIRouter(
     prefix="/rag",
@@ -36,6 +50,39 @@ def _event(payload: dict) -> str:
     return f"data: {json.dumps(payload)}\n\n"
 
 
+async def _guarded(awaitable: Awaitable[T]) -> T:
+    """Run a database call, reporting an unreachable database as a 503.
+
+    Without this a dropped connection surfaces as an unhandled 500 with a
+    stack trace. HTTPException passes through untouched, because the
+    conversation helpers already use it to say exactly what they mean.
+    """
+
+    try:
+        return await awaitable
+
+    except HTTPException:
+        raise
+
+    except Exception as exc:
+        raise translate(exc, fallback=DatabaseError) from exc
+
+
+def _clean_question(question: str) -> str:
+    """Reject a question that is blank once trimmed.
+
+    `min_length` on the schema stops "" but not "   ", which would reach the
+    pipeline as an embedding of nothing and retrieve arbitrary documents.
+    """
+
+    cleaned = question.strip()
+
+    if not cleaned:
+        raise EmptyQuestionError()
+
+    return cleaned
+
+
 async def _resolve_conversation(
     payload: RagChatRequest,
     current_user: User,
@@ -44,16 +91,22 @@ async def _resolve_conversation(
     """Continue the named conversation, or start one titled from the question."""
 
     if payload.conversation_id is not None:
-        return await get_conversation_or_404(
-            conversation_id=payload.conversation_id,
-            user=current_user,
-            db=db,
+        # an id that is well-formed but unknown, or owned by someone else,
+        # is a 404 from here
+        return await _guarded(
+            get_conversation_or_404(
+                conversation_id=payload.conversation_id,
+                user=current_user,
+                db=db,
+            )
         )
 
-    return await create_conversation(
-        user=current_user,
-        db=db,
-        title=payload.question,
+    return await _guarded(
+        create_conversation(
+            user=current_user,
+            db=db,
+            title=payload.question,
+        )
     )
 
 
@@ -79,16 +132,44 @@ async def _stream_answer(
         }
     )
 
-    async with AsyncSessionLocal() as session:
+    try:
+        # covers the whole turn: retrieval, generation and persistence.
+        # asyncio.TimeoutError is translated to a 504-equivalent error event
+        async with asyncio.timeout(settings.RAG_REQUEST_TIMEOUT_SECONDS):
 
-        service = build_rag_service(
-            conversation_id=conversation_id,
-            db=session,
-            access=access,
+            async with AsyncSessionLocal() as session:
+
+                service = build_rag_service(
+                    conversation_id=conversation_id,
+                    db=session,
+                    access=access,
+                )
+
+                async for delta in service.ask_stream(question):
+                    yield _event({"type": "delta", "text": delta})
+
+    # the status line went out with the first event, so a failure from here
+    # on can only be reported inside the stream. GeneratorExit and
+    # CancelledError are BaseException and pass through, so a client that
+    # hangs up does not produce an error event nobody will read.
+    except Exception as exc:
+        error = translate(exc, fallback=RagError)
+
+        logger.exception(
+            "RAG stream failed | conversation_id=%s | code=%s",
+            conversation_id,
+            error.code,
         )
 
-        async for delta in service.ask_stream(question):
-            yield _event({"type": "delta", "text": delta})
+        yield _event(
+            {
+                "type": "error",
+                "code": error.code,
+                "message": error.message,
+            }
+        )
+
+        return
 
     yield _event({"type": "done"})
 
@@ -99,7 +180,16 @@ async def chat(
     current_user: User = Depends(require_rag_access),
     db: AsyncSession = Depends(get_db),
 ) -> StreamingResponse:
-    """Ask a question and stream the answer back as it is generated."""
+    """Ask a question and stream the answer back as it is generated.
+
+    Errors split by when they happen. Anything found before the response
+    starts — a blank question, an unknown conversation, an unreachable
+    database — is a normal HTTP status. Anything after is an SSE `error`
+    event, because by then the status line has already been sent.
+    """
+
+    # before the conversation is created, so a blank question leaves no row
+    question = _clean_question(payload.question)
 
     conversation = await _resolve_conversation(
         payload=payload,
@@ -112,7 +202,7 @@ async def chat(
             # the id, not the ORM object: the request session closes before
             # the body runs, leaving the instance detached
             conversation_id=conversation.id,
-            question=payload.question,
+            question=question,
             # resolved here, while current_user is still attached
             access=build_access_scope(current_user),
         ),
@@ -139,11 +229,13 @@ async def get_conversations(
 ):
     """List the current user's conversations, most recently active first."""
 
-    return await list_conversations(
-        user=current_user,
-        db=db,
-        skip=skip,
-        limit=limit,
+    return await _guarded(
+        list_conversations(
+            user=current_user,
+            db=db,
+            skip=skip,
+            limit=limit,
+        )
     )
 
 
@@ -158,13 +250,17 @@ async def get_conversation_messages(
 ):
     """Full transcript of one conversation the user owns."""
 
-    conversation = await get_conversation_or_404(
-        conversation_id=conversation_id,
-        user=current_user,
-        db=db,
+    conversation = await _guarded(
+        get_conversation_or_404(
+            conversation_id=conversation_id,
+            user=current_user,
+            db=db,
+        )
     )
 
-    return await list_messages(
-        conversation_id=conversation.id,
-        db=db,
+    return await _guarded(
+        list_messages(
+            conversation_id=conversation.id,
+            db=db,
+        )
     )

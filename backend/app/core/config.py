@@ -81,6 +81,10 @@ class Settings(BaseSettings):
     OPENAI_REASONING_EFFORT: str = "minimal"
     DAMPING_CONSTANT: int = 30
 
+    # Ceiling on one /rag/chat turn, covering retrieval and generation.
+    # Step 7.1 adds per-downstream timeouts underneath this one.
+    RAG_REQUEST_TIMEOUT_SECONDS: int = 120
+
     @field_validator(
         "DATABASE_URL",
         "JWT_SECRET_KEY",
@@ -103,6 +107,7 @@ class Settings(BaseSettings):
         "AUTH_RATE_LIMIT_LOGIN_MAX_ATTEMPTS",
         "AUTH_RATE_LIMIT_REGISTER_MAX_ATTEMPTS",
         "AUTH_RATE_LIMIT_REFRESH_MAX_ATTEMPTS",
+        "RAG_REQUEST_TIMEOUT_SECONDS",
     )
     @classmethod
     def positive_numbers_only(cls, value: int) -> int:
