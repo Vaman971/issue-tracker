@@ -6,8 +6,13 @@ filtered on — see `IngestionService._prepare_issue`. `creator`, `assignee` and
 rather than silently matching nothing.
 """
 
+from sqlalchemy import or_, select
+
+from app.models.issue import Issue
+from app.models.project import Project
+from app.models.project_member import ProjectMember
 from app.models.rag_document import RagDocument
-from app.rag.filtering.schemas import SearchFilters
+from app.rag.filtering.schemas import AccessScope, SearchFilters
 
 
 def build_conditions(filters: SearchFilters | None) -> list:
@@ -35,3 +40,39 @@ def build_conditions(filters: SearchFilters | None) -> list:
         )
 
     return conditions
+
+
+def build_access_conditions(access: AccessScope | None) -> list:
+    """Return WHERE conditions restricting documents to what `access` may see.
+
+    Mirrors `_can_view_project` in `routes/projects.py`: an admin sees
+    everything, everyone else sees the projects they lead or belong to.
+
+    Expressed as a subquery rather than a materialised list of ids — a leader
+    of a large project would otherwise produce an unbounded IN clause.
+    """
+    if access is None or access.is_admin:
+        return []
+
+    visible_projects = (
+        select(Project.id)
+        .outerjoin(ProjectMember, ProjectMember.project_id == Project.id)
+        .where(
+            or_(
+                Project.leader_id == access.user_id,
+                ProjectMember.user_id == access.user_id,
+            )
+        )
+    )
+
+    visible_issues = (
+        select(Issue.id)
+        .where(Issue.project_id.in_(visible_projects))
+    )
+
+    return [
+        # deny by default: a future entity type needs a visibility rule of its
+        # own before it can be retrieved on a scoped request
+        RagDocument.entity_type == "issue",
+        RagDocument.entity_id.in_(visible_issues),
+    ]

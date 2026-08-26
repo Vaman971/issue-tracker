@@ -6,8 +6,8 @@ from app.models.rag_document import RagDocument
 from app.rag.embeddings.base import BaseEmbedding
 from app.rag.embeddings.schemas import EmbeddingStats
 from app.rag.embeddings.openai_embedder import OpenAiEmbedder
-from app.rag.filtering.conditions import build_conditions
-from app.rag.filtering.schemas import SearchFilters
+from app.rag.filtering.conditions import build_access_conditions, build_conditions
+from app.rag.filtering.schemas import AccessScope, SearchFilters
 from app.rag.retrievers.base import BaseRetriever
 from app.rag.retrievers.schemas import SearchResult
 from app.rag.tracing.schema import RetrievalTrace
@@ -28,6 +28,7 @@ class PGVectorRetriever(BaseRetriever):
         trace: RetrievalTrace | None = None,
         filters: SearchFilters | None = None,
         entity_ids: list[int] | None = None,
+        access: AccessScope | None = None,
     ) -> list[SearchResult]:
 
         stats = EmbeddingStats()
@@ -45,6 +46,9 @@ class PGVectorRetriever(BaseRetriever):
             .where(
                 RagDocument.is_active.is_(True),
                 *build_conditions(filters),
+                # applied in the query, so a document the user may not see is
+                # never retrieved rather than filtered out afterwards
+                *build_access_conditions(access),
                 # scope to a known set, e.g. the previous turn's results
                 *([RagDocument.entity_id.in_(entity_ids)] if entity_ids else []),
             )

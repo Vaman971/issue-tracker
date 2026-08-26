@@ -2,6 +2,7 @@ from collections.abc import AsyncIterator
 from dataclasses import dataclass
 
 from app.rag.context.base import ContextBase
+from app.rag.filtering.schemas import AccessScope
 from app.rag.llm.base import BaseLLM
 from app.rag.llm.pricing import estimate_cost
 from app.rag.llm.schemas import LLMUsage
@@ -52,7 +53,9 @@ class RAGService:
 
         memory_formatter: MemoryFormatter | None = None,
 
-        resolver: ReferenceResolver | None = None
+        resolver: ReferenceResolver | None = None,
+
+        access: AccessScope | None = None,
 
     ) -> None:
 
@@ -67,6 +70,10 @@ class RAGService:
         self.memory = memory
         self.memory_formatter = memory_formatter or MemoryFormatter()
         self.resolver = resolver
+
+        # whose visibility retrieval is confined to; None retrieves the
+        # whole corpus, which only the CLI and eval harness should do
+        self.access = access
 
     async def _prepare(self, question: str) -> PreparedTurn:
         """Resolve references, run the query pipeline, build the prompt."""
@@ -96,7 +103,8 @@ class RAGService:
             request=QueryRequest(
                 question=question,
                 history=formatted_history,
-                reference_ids=reference_ids
+                reference_ids=reference_ids,
+                access=self.access,
             ),
             trace=trace.query,
         )

@@ -12,10 +12,12 @@ from functools import lru_cache
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db.session import AsyncSessionLocal
+from app.models.user import User, UserRole
 from app.rag.context.context_builder import ContextBuilder
 from app.rag.embeddings.cached import CachedEmbedder
 from app.rag.embeddings.openai_embedder import OpenAiEmbedder
 from app.rag.filtering.filter_extractor import OpenAIFilterExtractor
+from app.rag.filtering.schemas import AccessScope
 from app.rag.llm.openai_llm import OpenAILLM
 from app.rag.memory.reference_resolver import ReferenceResolver
 from app.rag.memory.postgres_memory import PostgresMemory
@@ -82,9 +84,23 @@ def _shared_components() -> tuple[QueryPipeline, ContextBuilder, PromptTemplateL
     return pipeline, ContextBuilder(), prompt_loader, OpenAILLM()
 
 
+def build_access_scope(user: User) -> AccessScope:
+    """The projects a user may retrieve from, as a plain value.
+
+    Built from the User while the request's session is still open, so the
+    streaming body — which outlives it — never touches a detached instance.
+    """
+
+    return AccessScope(
+        user_id=user.id,
+        is_admin=user.role == UserRole.ADMIN,
+    )
+
+
 def build_rag_service(
     conversation_id: uuid.UUID,
     db: AsyncSession,
+    access: AccessScope,
 ) -> RAGService:
     """A RAGService bound to one conversation's persisted memory."""
 
@@ -100,4 +116,5 @@ def build_rag_service(
             session=db,
         ),
         resolver=ReferenceResolver(),
+        access=access,
     )
