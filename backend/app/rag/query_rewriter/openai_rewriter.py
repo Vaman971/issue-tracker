@@ -1,11 +1,11 @@
 from app.core.config import settings
+from app.rag.llm.client import build_openai_client
 from app.rag.query_rewriter.base import BaseQueryRewriter
 from app.rag.prompts.loader import PromptTemplateLoader
 
 from app.rag.query_rewriter.schemas import RewriteResult
 
 from typing import cast, Any
-from openai import AsyncOpenAI
 
 REWRITE_TEMPLATE = "rewrite_query.j2"
 
@@ -15,7 +15,7 @@ class OpenAIQueryRewriter(BaseQueryRewriter):
         self,
         prompt_loader: PromptTemplateLoader,
     ):
-        self.client = AsyncOpenAI(api_key=settings.OPENAI_API_KEY)
+        self.client = build_openai_client()
         self.model = settings.OPENAI_CHAT_MODEL
         self.loader = prompt_loader
 

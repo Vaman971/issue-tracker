@@ -1,9 +1,9 @@
 import json
 
-from openai import APITimeoutError, AsyncOpenAI
 from typing import cast, Any
 
 from app.core.config import settings
+from app.rag.llm.client import build_openai_client
 from app.rag.prompts.loader import PromptTemplateLoader
 from app.rag.reranking.base import BaseReranker
 from app.rag.reranking.schemas import RerankResult, RerankResponse
@@ -21,9 +21,7 @@ class OpenAiReranker(BaseReranker):
             prompt_loader: PromptTemplateLoader
     ) -> None:
 
-        self.client = AsyncOpenAI(
-            api_key=settings.OPENAI_API_KEY,
-        )
+        self.client = build_openai_client()
 
         self.prompt_loader = prompt_loader
 

@@ -16,6 +16,11 @@ engine = create_async_engine(
     # unrelated request. pre_ping validates a connection on checkout and
     # transparently replaces it if it has gone away.
     pool_pre_ping=True,
+    # Bounds how long opening a connection may hang when the database is
+    # reachable but not answering. Deliberately a connect timeout and not a
+    # command timeout: ingestion runs long statements through this same engine
+    # and a query ceiling would kill them.
+    connect_args={"timeout": settings.DB_CONNECT_TIMEOUT_SECONDS},
 )
 
 # session represents one unit of database interaction (conversation with the database)

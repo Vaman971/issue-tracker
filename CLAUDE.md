@@ -283,7 +283,59 @@ leak than the one being fixed.
   than "ran instantly", because `should_run` skips self-contained questions.
   Averaged across requests this understates the real rewrite cost. The trace
   has `skipped` flags; surfacing them would extend the payload.
-- **Next:** Phase 7.1 — rate limiting, timeouts, retry policy.
+- **7.1 — DONE, awaiting review.**
+
+  *Rate limiting.* `_enforce_chat_rate_limit` in `routes/rag.py` reuses
+  `services/rate_limit.py`. Keyed on `user.id`, not client IP — the endpoint
+  is authenticated and each call spends real money. Not reset on success,
+  unlike login: there a reset stops a user being locked out by their own
+  typos, here every request is a genuine cost. `RAG_RATE_LIMIT_MAX_REQUESTS`
+  10 per `RAG_RATE_LIMIT_WINDOW_SECONDS` 60. Fails open when Redis is down,
+  matching how the rest of the RAG path treats an unavailable cache.
+  Verified: 13 requests -> 10 accepted, 3 rejected, first 429 at #11, and a
+  second user is unaffected while the first is blocked.
+
+  *Ordering.* Question validation runs BEFORE the limiter: rejecting a blank
+  question reaches no model, and the limit is justified by cost. The
+  conversation lookup stays after it, since that is a real database query.
+
+  *One OpenAI client.* `app/rag/llm/client.py` — `build_openai_client()`.
+  All six adapters (answer, embedder, reranker, rewriter, filter,
+  multi-query) built their own bare `AsyncOpenAI`, so a policy would have had
+  to be set in six places and would drift. Timeout and retries now live in
+  one place.
+
+  *Retry policy is the SDK's, deliberately.* It is already exponential
+  backoff with jitter over exactly the right failures. Proven rather than
+  assumed, against a local server: a 503 makes 3 attempts over 2.16s, a 400
+  makes 1 attempt in 0.01s. A hand-rolled loop would duplicate it and retry
+  the errors it deliberately does not.
+
+  *Timeouts.* `OPENAI_TIMEOUT_SECONDS` 30 x `OPENAI_MAX_RETRIES` 2 = 90s
+  worst case per call, sized to fit inside the 120s
+  `RAG_REQUEST_TIMEOUT_SECONDS` turn ceiling. `DB_CONNECT_TIMEOUT_SECONDS`
+  10 via `connect_args` — a connect timeout, NOT a command timeout, because
+  ingestion runs long statements through the same engine.
+
+### 7.1 findings worth keeping
+
+- **The first retry config made a Redis outage 3x worse.** 2 retries against
+  the reused 3s healthcheck timeout took a turn from 15s to 77s with Redis
+  down. A turn touches the cache dozens of times, so every second spent
+  failing is multiplied.
+- **But the realistic outage is nearly free.** Measured per failed lookup:
+  host resolves / port closed (a crashed Redis, the production case) 0.01s;
+  host does not resolve (a removed container, mostly dev) 0.50s, bounded by
+  `REDIS_CONNECT_TIMEOUT_SECONDS`. The 77s was DNS resolution for a stopped
+  container, not connection cost. That measurement is why there is **no
+  circuit breaker** — the retry chain is already bounded where it matters.
+- **Redis needs its own connect timeout.** `REDIS_HEALTHCHECK_TIMEOUT_SECONDS`
+  (3s) is fine for a readiness probe and far too long for a lookup paid on
+  every cache access. Now `REDIS_CONNECT_TIMEOUT_SECONDS` 0.5 with 1 retry.
+- **No DB retry, on purpose.** A retried write could double-write, and
+  `pool_pre_ping=True` already covers the stale-connection case that a retry
+  would otherwise catch.
+- **Next:** Phase 7 beyond 7.1, if any.
 
 ### Cost observation worth remembering
 

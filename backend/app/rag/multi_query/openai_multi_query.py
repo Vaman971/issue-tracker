@@ -2,9 +2,9 @@ from app.rag.multi_query.base import BaseQueryExpander
 from app.rag.multi_query.schemas import ExpansionResult
 from app.rag.prompts.loader import PromptTemplateLoader
 from app.core.config import settings
+from app.rag.llm.client import build_openai_client
 
 from typing import cast, Any
-from openai import AsyncOpenAI
 import json
 
 EXPAND_TEMPLATE = "expand_query.j2"
@@ -32,9 +32,7 @@ class OpenAIQueryExpander(BaseQueryExpander):
         count: int = 3,
     ) -> None:
 
-        self.client = AsyncOpenAI(
-            api_key=settings.OPENAI_API_KEY,
-        )
+        self.client = build_openai_client()
 
         self.prompt_loader = prompt_loader
 
