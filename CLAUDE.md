@@ -244,7 +244,51 @@ leak than the one being fixed.
   `not_persisted` (88 deltas — answer delivered, write failed),
   `timeout` (11 deltas), and pre-stream 400 / 404 / 422 / 401.
   Redis stopped -> the request still answers, uncached.
-- **Next:** 6.7 telemetry, then Phase 7.
+- **6.7 — DONE, awaiting review.** `app/rag/tracing/telemetry.py`:
+  `TelemetryRecord` carries the roadmap's exact keys (`LLM_TTFT` and
+  `LLM_total_latency` included, odd casing and all — they are a contract with
+  the log consumer). `build_record(trace, request_id, conversation_id)`
+  flattens `RAGTrace`; `emit()` logs it via
+  `extra={"telemetry": {...}}`, and `JsonFormatter` was extended to nest that
+  as an object instead of dropping it.
+
+  `RAGService` gained `request_id` and `conversation_id` (telemetry only) and
+  calls `emit()` at the end of `_record_turn`, right after
+  `TracePrinter.print`, so `total_duration_ms` is already set.
+
+  **The request id has the same lifecycle trap as the session.** The logging
+  middleware resets `request_id_context` when the handler returns, which for
+  a streaming response is before any work happens. The route reads it with
+  `request_id_context.get()` and passes it in, exactly as it does for
+  `AccessScope`. Verified: a client-supplied `X-Request-ID` reaches the
+  record.
+
+  Verified cold vs warm on the same question: 17916ms -> 4131ms total,
+  `search` cache 0/4 hits -> 4/0, filter/multi_query/rerank all false ->
+  true, and `rerank_usd` correctly 0 on the cached turn.
+
+### 6.7 gaps, deliberate
+
+- **`cost.total_usd` is a floor, not the whole cost.** Only the answer model
+  and the reranker record token usage. The rewrite, filter and multi-query
+  stages also call a model but their trace dataclasses have no token fields,
+  so their spend is invisible. Closing this means threading usage through
+  three more adapters — a separate change, not part of 6.7.
+- **Telemetry is emitted on success only.** A failed turn never reaches
+  `_record_turn`. Emitting a partial record would be worse than none: with no
+  error field in the agreed payload, a failure would look identical to a
+  cheap cache-heavy success. Adding `status` / `error_code` to the payload is
+  the fix, and it changes the agreed structure, so it needs a decision.
+- **`rewrite_latency: 0.0` is ambiguous** — it means "skipped" far more often
+  than "ran instantly", because `should_run` skips self-contained questions.
+  Averaged across requests this understates the real rewrite cost. The trace
+  has `skipped` flags; surfacing them would extend the payload.
+- **Next:** Phase 7.1 — rate limiting, timeouts, retry policy.
+
+### Cost observation worth remembering
+
+On a cold turn the reranker costs roughly ten times the answer model
+($0.0058 vs $0.0005). If cost becomes a concern, rerank is the lever.
 
 ### 6.6 findings worth keeping
 

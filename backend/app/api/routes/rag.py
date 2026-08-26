@@ -18,6 +18,7 @@ from app.api.helpers.conversation_helper import (
 )
 from app.api.helpers.rag_helper import build_access_scope, build_rag_service
 from app.core.config import settings
+from app.core.request_context import request_id_context
 from app.db.session import AsyncSessionLocal, get_db
 from app.models.conversation import Conversation
 from app.models.user import User
@@ -114,6 +115,7 @@ async def _stream_answer(
     conversation_id: uuid.UUID,
     question: str,
     access: AccessScope,
+    request_id: str | None,
 ) -> AsyncIterator[str]:
     """Emit the conversation id, then the answer as it is generated.
 
@@ -143,6 +145,7 @@ async def _stream_answer(
                     conversation_id=conversation_id,
                     db=session,
                     access=access,
+                    request_id=request_id,
                 )
 
                 async for delta in service.ask_stream(question):
@@ -205,6 +208,10 @@ async def chat(
             question=question,
             # resolved here, while current_user is still attached
             access=build_access_scope(current_user),
+            # read here for the same reason: the logging middleware resets
+            # the context variable once this handler returns, which for a
+            # streaming response is before any of the work happens
+            request_id=request_id_context.get(),
         ),
         media_type="text/event-stream",
         headers={

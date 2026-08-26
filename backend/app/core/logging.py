@@ -19,6 +19,12 @@ class JsonFormatter(logging.Formatter):
         if request_id:
             log_data["request_id"] = request_id
 
+        # structured payloads passed as extra={"telemetry": {...}} are nested
+        # as an object rather than flattened into the message string
+        telemetry = getattr(record, "telemetry", None)
+        if telemetry:
+            log_data["telemetry"] = telemetry
+
         return json.dumps(log_data)
 
 
