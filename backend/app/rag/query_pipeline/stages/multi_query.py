@@ -7,6 +7,7 @@ from app.rag.query_pipeline.stages.base import BaseQueryStage
 from app.rag.multi_query.base import BaseQueryExpander
 from app.rag.multi_query.schemas import ExpansionResult
 from app.rag.tracing.timer import Timer
+from app.rag.tracing.usage import record_usage
 from app.rag.tracing.schema import QueryTrace
 from app.services.cache import cache_get_json, cache_set_json
 
@@ -179,6 +180,9 @@ class MultiQueryStage(BaseQueryStage):
             # asdict, because json.dumps cannot serialise a dataclass
             await cache_set_json(cache_key, asdict(expansion))
             trace.multi_query.cache_hit = False
+
+            # miss only, matching the filter and rerank stages
+            record_usage(trace.multi_query, expansion.usage)
 
         trace.multi_query.duration_ms = timer.elapsed_ms()
 

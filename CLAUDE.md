@@ -146,6 +146,27 @@ answers follow-ups against the whole corpus instead of the referenced set.
 `ConversationState`); messages live in a child table with role, content and
 timestamp.
 
+### D4 — /rag/chat rate limit stays at 10 per minute per user (Step 7.1)
+
+**Question:** 10 requests per 60s was a guessed default, not a measured one.
+Is it right?
+
+**Decision:** keep it.
+
+**Rationale:** a normal user asks through a UI that waits for the answer, and
+a turn costs 2-3s warm and 15s+ cold, so a sequential client cannot
+realistically approach 10/min. For an attacker the cap is sufficient on its
+own.
+
+**Caveat worth remembering:** pipeline latency only throttles a *sequential*
+client. Concurrent requests do not wait for one another, so an attacker can
+spend the whole minute's budget at once — the protection is the limiter, not
+the latency. 10 concurrent cold turns is a bounded burst, which is the
+intended behaviour.
+
+**Still open:** the limiter fails open when Redis is unreachable, matching the
+rest of the RAG path. Anyone who can take Redis down lifts the cap.
+
 ### D3 — RAG retrieval is scoped to project visibility (Step 6.4 follow-on)
 
 **Question:** the roadmap defers "granular resource-level blocking", but the
@@ -267,13 +288,47 @@ leak than the one being fixed.
   `search` cache 0/4 hits -> 4/0, filter/multi_query/rerank all false ->
   true, and `rerank_usd` correctly 0 on the cached turn.
 
-### 6.7 gaps, deliberate
+### 6.7b — complete token and cost capture (DONE, awaiting review)
 
-- **`cost.total_usd` is a floor, not the whole cost.** Only the answer model
-  and the reranker record token usage. The rewrite, filter and multi-query
-  stages also call a model but their trace dataclasses have no token fields,
-  so their spend is invisible. Closing this means threading usage through
-  three more adapters — a separate change, not part of 6.7.
+Closed the "cost is a floor" gap before first release, so debugging and
+pipeline tuning have real numbers.
+
+- `app/rag/llm/usage.py` — `read_usage(response, model)`. One reader instead
+  of the same four-way ternary in five adapters. Also fixes a latent
+  `AttributeError`: the reranker reached straight into
+  `usage.output_tokens_details.reasoning_tokens`, which is absent on some
+  responses.
+- `LLMUsage` gained `reasoning_tokens`. It is a **subset** of `output_tokens`,
+  not an addition — the Responses API bills reasoning as output, so cost must
+  not count it twice. `estimate_cost` therefore still takes input + output.
+- `RewriteResult`, `FilterResult` and `ExpansionResult` each carry a `usage`.
+  Their adapters read it **before parsing**, because a call is billed whether
+  or not its output turns out to be readable.
+- `RewriteTrace`, `FilterTrace`, `MultiQueryTrace` gained model / tokens /
+  cost, matching `RerankTrace`. `app/rag/tracing/usage.py` —
+  `record_usage(trace, usage)` copies and prices in one place, typed with a
+  `Protocol` so `slots` dataclasses need no base class.
+- Stages record **on a cache miss only**, matching the rerank precedent: a
+  hit, a skip and the deterministic filter path all leave zero, so summing a
+  conversation never charges twice for work done once.
+- `telemetry._cost` and `telemetry._tokens` now cover all five stages, each
+  with a `by_stage` split carrying its own model (stages run `gpt-5`, the
+  answer runs `gpt-5-mini`).
+
+**Measured:** a cold turn is **$0.009186**, against the $0.006309 reported
+before — the old figure understated by about 31%. Rerank is still the
+dominant cost ($0.0058). A warm turn is $0.000428, answer model only.
+
+`reasoning_tokens` reads 0 throughout because `OPENAI_REASONING_EFFORT` is
+`minimal`. Verified as real rather than broken: the same reader returns 640
+against a `medium`-effort call, matching the raw payload.
+
+**Note:** `TracePrinter.print(trace)` is commented out in `_record_turn`
+("emit serves the purpose"). The per-stage cost lines added to the printer
+are dormant until that is uncommented, and `TracePrinter` is an unused import
+in `rag_service.py` while it stays that way.
+
+### 6.7 gaps, deliberate
 - **Telemetry is emitted on success only.** A failed turn never reaches
   `_record_turn`. Emitting a partial record would be worse than none: with no
   error field in the agreed payload, a failure would look identical to a
@@ -329,13 +384,18 @@ leak than the one being fixed.
   `REDIS_CONNECT_TIMEOUT_SECONDS`. The 77s was DNS resolution for a stopped
   container, not connection cost. That measurement is why there is **no
   circuit breaker** — the retry chain is already bounded where it matters.
-- **Redis needs its own connect timeout.** `REDIS_HEALTHCHECK_TIMEOUT_SECONDS`
-  (3s) is fine for a readiness probe and far too long for a lookup paid on
-  every cache access. Now `REDIS_CONNECT_TIMEOUT_SECONDS` 0.5 with 1 retry.
+- **Redis needs its own timeouts, and connect is not command.** First split
+  from `REDIS_HEALTHCHECK_TIMEOUT_SECONDS` (3s, fine for a readiness probe,
+  far too long for a per-lookup cost) to a single 0.5s value — which then
+  timed out against a **healthy** Redis from a cold-start script, because
+  establishing a connection includes DNS and that can exceed a second on a
+  cold process in Docker. Now two budgets:
+  `REDIS_CONNECT_TIMEOUT_SECONDS` 2.0 (paid once per connection, covers DNS)
+  and `REDIS_COMMAND_TIMEOUT_SECONDS` 0.5 (paid per lookup), with 1 retry.
 - **No DB retry, on purpose.** A retried write could double-write, and
   `pool_pre_ping=True` already covers the stale-connection case that a retry
   would otherwise catch.
-- **Next:** Phase 7 beyond 7.1, if any.
+- **Next:** Phase 7 beyond 7.1, if any. Phase 6 and 7.1 are otherwise complete.
 
 ### Cost observation worth remembering
 

@@ -3,6 +3,7 @@ from app.rag.multi_query.schemas import ExpansionResult
 from app.rag.prompts.loader import PromptTemplateLoader
 from app.core.config import settings
 from app.rag.llm.client import build_openai_client
+from app.rag.llm.usage import read_usage
 
 from typing import cast, Any
 import json
@@ -62,6 +63,10 @@ class OpenAIQueryExpander(BaseQueryExpander):
             reasoning=cast(Any, {"effort": settings.OPENAI_REASONING_EFFORT})
         )
 
+        # recorded before parsing: the call was billed whether or not its
+        # output turns out to be readable
+        usage = read_usage(response, self.model)
+
         # a malformed response falls back to no alternatives, which just means
         # the pipeline searches the original query alone
         try:
@@ -76,6 +81,7 @@ class OpenAIQueryExpander(BaseQueryExpander):
             return ExpansionResult(
                 original_query=query,
                 alternatives=alternatives[:self.count],
+                usage=usage,
             )
 
         except (json.JSONDecodeError, AttributeError, TypeError):
@@ -83,4 +89,5 @@ class OpenAIQueryExpander(BaseQueryExpander):
             return ExpansionResult(
                 original_query=query,
                 alternatives=[],
+                usage=usage,
             )

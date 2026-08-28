@@ -32,6 +32,22 @@ def _heading(title: str, rule: str = MINOR) -> None:
     print()
 
 
+def _total_cost(trace: RAGTrace) -> float:
+    """Every stage that charged for this turn, summed.
+
+    Cached and skipped stages hold zero, so this is what the turn actually
+    spent rather than what it would have cost cold.
+    """
+
+    return (
+        trace.query.rewrite.cost_usd
+        + trace.query.filter.cost_usd
+        + trace.query.multi_query.cost_usd
+        + trace.query.rerank.cost_usd
+        + trace.llm.cost_usd
+    )
+
+
 class TracePrinter:
 
     @staticmethod
@@ -50,6 +66,8 @@ class TracePrinter:
             print(_row("Rewritten Query", trace.query.rewrite.rewritten_query))
             print(_row("History used", trace.query.rewrite.used_history))
             print()
+            print(_row("Model", trace.query.rewrite.model))
+            print(_row("Cost", f"${trace.query.rewrite.cost_usd:.4f}"))
             print(_row("Time", format_ms(trace.query.rewrite.duration_ms)))
             print()
 
@@ -67,6 +85,9 @@ class TracePrinter:
         else "LLM"))
         if not trace.query.filter.deterministic:
             print(_row("Cache Hit", bool(trace.query.filter.cache_hit)))
+            print(_row("Model", trace.query.filter.model))
+        # zero on the deterministic path and on a cache hit: no model ran
+        print(_row("Cost", f"${trace.query.filter.cost_usd:.4f}"))
         print(_row("Time", format_ms(trace.query.filter.duration_ms)))
         print()
 
@@ -81,6 +102,8 @@ class TracePrinter:
                 print(_row("Alternatives", "none"))
             print()
             print(_row("Cache Hit", bool(trace.query.multi_query.cache_hit)))
+            print(_row("Model", trace.query.multi_query.model))
+            print(_row("Cost", f"${trace.query.multi_query.cost_usd:.4f}"))
             print(_row("Time", format_ms(trace.query.multi_query.duration_ms)))
             print()
 
@@ -132,8 +155,9 @@ class TracePrinter:
         print(_row("Time", format_ms(trace.llm.duration_ms)))
         print()
 
-        _heading("TOTAL TIME")
+        _heading("TOTAL")
         print(_row("Total Time",format_ms(trace.total_duration_ms)))
+        print(_row("Total Cost", f"${_total_cost(trace):.4f}"))
         print()
 
         _heading("ANSWER")

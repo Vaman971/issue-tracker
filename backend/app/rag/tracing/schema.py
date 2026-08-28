@@ -46,6 +46,9 @@ class LLMTrace:
 
     output_tokens: int = 0
 
+    # counted inside output_tokens, not on top of it
+    reasoning_tokens: int = 0
+
     total_tokens: int = 0
 
     answer: str = ""
@@ -77,6 +80,19 @@ class RewriteTrace:
     # covers both skips: no history at all, and a self-contained question
     skip_reason: str = "No reference to resolve"
 
+    # zero when the stage was skipped, served from cache, or resolved
+    # deterministically — see the stage that writes them
+    model: str = ""
+
+    input_tokens: int = 0
+
+    output_tokens: int = 0
+
+    reasoning_tokens: int = 0
+
+    cost_usd: float = 0.0
+
+
 @dataclass(slots=True)
 class FilterTrace:
 
@@ -92,6 +108,18 @@ class FilterTrace:
 
     duration_ms: float = 0
 
+    # zero when the stage was skipped, served from cache, or resolved
+    # deterministically — see the stage that writes them
+    model: str = ""
+
+    input_tokens: int = 0
+
+    output_tokens: int = 0
+
+    reasoning_tokens: int = 0
+
+    cost_usd: float = 0.0
+
 
 @dataclass(slots=True)
 class MultiQueryTrace:
@@ -105,6 +133,19 @@ class MultiQueryTrace:
     cache_hit: bool = False
 
     skip_reason: str = "Specific entity lookup"
+
+    # zero when the stage was skipped, served from cache, or resolved
+    # deterministically — see the stage that writes them
+    model: str = ""
+
+    input_tokens: int = 0
+
+    output_tokens: int = 0
+
+    reasoning_tokens: int = 0
+
+    cost_usd: float = 0.0
+
 
 
 @dataclass(slots=True)

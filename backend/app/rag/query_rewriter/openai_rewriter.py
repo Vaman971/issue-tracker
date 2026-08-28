@@ -1,5 +1,6 @@
 from app.core.config import settings
 from app.rag.llm.client import build_openai_client
+from app.rag.llm.usage import read_usage
 from app.rag.query_rewriter.base import BaseQueryRewriter
 from app.rag.prompts.loader import PromptTemplateLoader
 
@@ -27,7 +28,7 @@ class OpenAIQueryRewriter(BaseQueryRewriter):
             history=history,
         )
 
-        rewritten_query = await self.client.responses.create(
+        response = await self.client.responses.create(
             input=prompt,
             model=self.model,
             reasoning=cast(Any, {"effort": settings.OPENAI_REASONING_EFFORT})
@@ -35,6 +36,7 @@ class OpenAIQueryRewriter(BaseQueryRewriter):
 
         return RewriteResult(
             original_query=question,
-            rewritten_query=rewritten_query.output_text,
-            used_history=bool(history)
+            rewritten_query=response.output_text,
+            used_history=bool(history),
+            usage=read_usage(response, self.model),
         )

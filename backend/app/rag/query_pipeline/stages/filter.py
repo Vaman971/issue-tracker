@@ -6,6 +6,7 @@ from app.rag.filtering.base import BaseFilterExtractor
 from app.rag.filtering.deterministic import extract_deterministic
 from app.rag.filtering.schemas import FilterResult, SearchFilters
 from app.rag.tracing.timer import Timer
+from app.rag.tracing.usage import record_usage
 from app.rag.tracing.schema import QueryTrace
 from app.services.cache import cache_get_json, cache_set_json
 
@@ -130,6 +131,11 @@ class FilterStage(BaseQueryStage):
 
                 await cache_set_json(cache_key, asdict(filtered_query))
                 trace.filter.cache_hit = False
+
+                # only on a miss. A cache hit and the deterministic fast path
+                # both reach no model, so they leave this at zero rather than
+                # re-charging work already paid for.
+                record_usage(trace.filter, filtered_query.usage)
 
             trace.filter.duration_ms = timer.elapsed_ms()
 

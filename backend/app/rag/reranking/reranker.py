@@ -4,6 +4,7 @@ from typing import cast, Any
 
 from app.core.config import settings
 from app.rag.llm.client import build_openai_client
+from app.rag.llm.usage import read_usage
 from app.rag.prompts.loader import PromptTemplateLoader
 from app.rag.reranking.base import BaseReranker
 from app.rag.reranking.schemas import RerankResult, RerankResponse
@@ -63,6 +64,11 @@ class OpenAiReranker(BaseReranker):
             reasoning=cast(Any, {"effort": settings.OPENAI_REASONING_EFFORT}),
         )
 
+        # read before parsing: the call was billed either way. Via the shared
+        # reader because `output_tokens_details` is absent on some responses,
+        # which the previous inline access would have raised on.
+        usage = read_usage(response, self._model)
+
         payload = self._parse_response(
             response.output_text
         )
@@ -77,11 +83,11 @@ class OpenAiReranker(BaseReranker):
 
             return RerankResponse(
                 results = default[:top_k],
-                model=self._model,
-                input_tokens=response.usage.input_tokens if response.usage else 0,
-                output_tokens=response.usage.output_tokens if response.usage else 0,
-                reasoning_tokens=response.usage.output_tokens_details.reasoning_tokens if response.usage else 0,
-                total_tokens=response.usage.total_tokens if response.usage else 0
+                model=usage.model,
+                input_tokens=usage.input_tokens,
+                output_tokens=usage.output_tokens,
+                reasoning_tokens=usage.reasoning_tokens,
+                total_tokens=usage.total_tokens
             ) 
 
         reranked = self._build_results(
@@ -91,11 +97,11 @@ class OpenAiReranker(BaseReranker):
 
         return RerankResponse(
                 results = reranked[:top_k],
-                model=self._model,
-                input_tokens=response.usage.input_tokens if response.usage else 0,
-                output_tokens=response.usage.output_tokens if response.usage else 0,
-                reasoning_tokens=response.usage.output_tokens_details.reasoning_tokens if response.usage else 0,
-                total_tokens=response.usage.total_tokens if response.usage else 0
+                model=usage.model,
+                input_tokens=usage.input_tokens,
+                output_tokens=usage.output_tokens,
+                reasoning_tokens=usage.reasoning_tokens,
+                total_tokens=usage.total_tokens
             )
 
 

@@ -60,3 +60,6 @@ class OpenAILLM(BaseLLM):
         usage.input_tokens = reported.input_tokens
         usage.output_tokens = reported.output_tokens
         usage.total_tokens = reported.total_tokens
+
+        details = getattr(reported, "output_tokens_details", None)
+        usage.reasoning_tokens = getattr(details, "reasoning_tokens", 0) if details else 0
