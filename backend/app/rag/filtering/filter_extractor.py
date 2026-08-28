@@ -4,6 +4,7 @@ from app.rag.filtering.schemas import FilterResult, SearchFilters
 
 from app.core.config import settings
 from app.rag.llm.client import build_openai_client
+from app.rag.llm.usage import read_usage
 
 from typing import cast, Any
 import json
@@ -56,6 +57,10 @@ class OpenAIFilterExtractor(BaseFilterExtractor):
             reasoning=cast(Any, {"effort": settings.OPENAI_REASONING_EFFORT})
         )
 
+        # recorded before parsing: the call was billed whether or not its
+        # output turns out to be readable
+        usage = read_usage(response, self.model)
+
         # any malformed response falls back to the unfiltered query rather
         # than failing the whole turn
         try:
@@ -75,6 +80,7 @@ class OpenAIFilterExtractor(BaseFilterExtractor):
             return FilterResult(
                 query=payload.get("query") or query,
                 filters=filters,
+                usage=usage,
             )
 
         except (json.JSONDecodeError, AttributeError, TypeError):
@@ -82,4 +88,5 @@ class OpenAIFilterExtractor(BaseFilterExtractor):
             return FilterResult(
                 query=query,
                 filters=SearchFilters(),
+                usage=usage,
             )

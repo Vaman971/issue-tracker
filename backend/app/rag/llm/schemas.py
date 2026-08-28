@@ -16,10 +16,12 @@ class LLMResponse:
 
 @dataclass(slots=True)
 class LLMUsage:
-    """Filled in by `stream()` when the provider reports usage.
+    """What one model call consumed.
 
-    Streaming yields text, so token counts can only arrive at the end.
-    Passing a sink keeps the iterator's element type a plain `str`.
+    Used two ways. `stream()` fills it in as a sink, because streaming yields
+    text and token counts only arrive at the end, and passing a sink keeps the
+    iterator's element type a plain `str`. The non-streaming adapters return
+    it on their result, built by `read_usage`.
     """
 
     model: str = ""
@@ -27,5 +29,9 @@ class LLMUsage:
     input_tokens: int = 0
 
     output_tokens: int = 0
+
+    # a SUBSET of output_tokens, not an addition to them — the Responses API
+    # bills reasoning as output, so cost must not count it twice
+    reasoning_tokens: int = 0
 
     total_tokens: int = 0

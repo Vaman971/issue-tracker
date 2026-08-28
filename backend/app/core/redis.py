@@ -20,10 +20,10 @@ def get_redis_client() -> Redis:
             settings.REDIS_URL,
             encoding="utf-8",
             decode_responses=True,
-            # not the healthcheck timeout: that one can afford to wait, this
-            # one is paid on every cache lookup in every turn
+            # connect covers DNS and is paid once per connection; the command
+            # timeout is paid on every lookup, so it is far tighter
             socket_connect_timeout=settings.REDIS_CONNECT_TIMEOUT_SECONDS,
-            socket_timeout=settings.REDIS_CONNECT_TIMEOUT_SECONDS,
+            socket_timeout=settings.REDIS_COMMAND_TIMEOUT_SECONDS,
             # Rides out a blip, not an outage. One retry with a tenth-second
             # backoff bounds a failed lookup to about a second; a longer chain
             # costs far more on a dead Redis than the cache saves when it is up.

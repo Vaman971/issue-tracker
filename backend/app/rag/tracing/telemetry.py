@@ -12,6 +12,11 @@ and produces the agreed payload; nothing downstream needs to know a
 Field names follow the roadmap exactly, including `LLM_TTFT` and
 `LLM_total_latency`, because they are a contract with whatever consumes
 these logs rather than ordinary Python attributes.
+
+`cost` and `input_output_tokens` cover every model call a turn makes — the
+rewrite, filter, multi-query and rerank stages as well as the answer — so the
+totals are the real figures. Both carry a per-stage split, because tuning the
+pipeline means knowing which stage is spending.
 """
 
 import logging
@@ -101,21 +106,79 @@ def _cache_hits_misses(trace: RAGTrace) -> dict:
     }
 
 
-def _cost(trace: RAGTrace) -> dict:
-    """What the turn cost, split by the models that charged for it.
+def _model_stages(trace: RAGTrace) -> dict:
+    """The pipeline stages that call a model, in the order they run.
 
-    Only the two stages that record usage are counted. The rewrite, filter
-    and multi-query stages also call a model but capture no token counts, so
-    `total_usd` is a floor on the true cost, not the whole of it.
+    The answer model is handled separately: it streams, so its usage arrives
+    through a different path and its trace has a different shape.
     """
 
-    answer_usd = trace.llm.cost_usd
-    rerank_usd = trace.query.rerank.cost_usd
+    return {
+        "rewrite": trace.query.rewrite,
+        "filter": trace.query.filter,
+        "multi_query": trace.query.multi_query,
+        "rerank": trace.query.rerank,
+    }
+
+
+def _cost(trace: RAGTrace) -> dict:
+    """What the turn cost, split by the stage that spent it.
+
+    Every stage that calls a model is counted, so `total_usd` is the real
+    figure rather than a floor. A stage reports zero when it was skipped,
+    served from cache, or resolved without a model — so summing costs across
+    a conversation never charges twice for work done once.
+    """
+
+    costs = {
+        f"{name}_usd": stage.cost_usd
+        for name, stage in _model_stages(trace).items()
+    }
+
+    costs["answer_usd"] = trace.llm.cost_usd
+
+    total = sum(costs.values())
+
+    return {key: round(value, 6) for key, value in costs.items()} | {
+        "total_usd": round(total, 6),
+    }
+
+
+def _tokens(trace: RAGTrace) -> dict:
+    """Tokens for the whole turn, and the per-stage split behind it.
+
+    The totals cover every model call, not just the answer — tuning the
+    pipeline means knowing which stage is spending the tokens, and reasoning
+    tokens are broken out because they are the usual reason a cheap-looking
+    stage is not.
+    """
+
+    by_stage = {
+        name: {
+            # per stage, because they do not all run on the same model
+            "model": stage.model,
+            "input": stage.input_tokens,
+            "output": stage.output_tokens,
+            "reasoning": stage.reasoning_tokens,
+        }
+        for name, stage in _model_stages(trace).items()
+    }
+
+    by_stage["answer"] = {
+        "model": trace.llm.model,
+        "input": trace.llm.input_tokens,
+        "output": trace.llm.output_tokens,
+        "reasoning": trace.llm.reasoning_tokens,
+    }
+
+    total_input = sum(stage["input"] for stage in by_stage.values())
+    total_output = sum(stage["output"] for stage in by_stage.values())
 
     return {
-        "answer_usd": round(answer_usd, 6),
-        "rerank_usd": round(rerank_usd, 6),
-        "total_usd": round(answer_usd + rerank_usd, 6),
+        "input": total_input,
+        "output": total_output,
+        "total": total_input + total_output,
+        "by_stage": by_stage,
     }
 
 
@@ -143,11 +206,7 @@ def build_record(
         # what retrieval handed to the reranker, before it narrowed the set
         retrieval_candidate_count=len(query.retrieval.final_results),
         model_used=trace.llm.model,
-        input_output_tokens={
-            "input": trace.llm.input_tokens,
-            "output": trace.llm.output_tokens,
-            "total": trace.llm.total_tokens,
-        },
+        input_output_tokens=_tokens(trace),
         cost=_cost(trace),
     )
 

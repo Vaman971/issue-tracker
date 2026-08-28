@@ -3,6 +3,7 @@ from app.rag.query_pipeline.stages.base import BaseQueryStage
 from app.rag.query_rewriter.base import BaseQueryRewriter
 from app.rag.query_rewriter.schemas import RewriteResult
 from app.rag.tracing.timer import Timer
+from app.rag.tracing.usage import record_usage
 from app.rag.tracing.schema import QueryTrace
 
 from app.rag.query_pipeline.schemas import QueryRequest, ProcessedQuery
@@ -64,6 +65,9 @@ class RewriteStage(BaseQueryStage):
             )
 
             trace.rewrite.duration_ms = timer.elapsed_ms()
+
+            # this stage has no cache, so the call always happened
+            record_usage(trace.rewrite, rewrite.usage)
 
         processed.rewritten_query = rewrite.rewritten_query
 

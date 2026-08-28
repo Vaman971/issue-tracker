@@ -229,6 +229,7 @@ class RAGService:
         trace.llm.model = usage.model or self.llm.model
         trace.llm.input_tokens = usage.input_tokens
         trace.llm.output_tokens = usage.output_tokens
+        trace.llm.reasoning_tokens = usage.reasoning_tokens
         trace.llm.total_tokens = usage.total_tokens
         trace.llm.cost_usd = estimate_cost(
             trace.llm.model,

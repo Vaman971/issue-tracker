@@ -107,7 +107,13 @@ class Settings(BaseSettings):
     # retries against the 3s healthcheck timeout a turn took 77s with Redis
     # down versus 15s with it up. Hence a connect timeout of its own, an order
     # of magnitude shorter than the healthcheck's, and a single retry.
-    REDIS_CONNECT_TIMEOUT_SECONDS: float = 0.5
+    # Two different budgets, conflated at first and split after a cold-start
+    # script timed out against a HEALTHY Redis: establishing a connection has
+    # to cover DNS, which on a cold process in Docker can take over a second,
+    # while a command on an established connection returns in well under a
+    # millisecond. One is paid per connection, the other per lookup.
+    REDIS_CONNECT_TIMEOUT_SECONDS: float = 2.0
+    REDIS_COMMAND_TIMEOUT_SECONDS: float = 0.5
     REDIS_RETRY_ATTEMPTS: int = 1
     REDIS_RETRY_BACKOFF_CAP_SECONDS: float = 0.1
 
