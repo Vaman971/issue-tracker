@@ -5,7 +5,7 @@ import { logout, setCredentials } from "./features/auth/authSlice";
 
 const API_BASE_URL = "/api";
 
-const getStoredAccessToken = () => {
+export const getStoredAccessToken = () => {
     const accessToken = localStorage.getItem("accessToken") || localStorage.getItem("access_token");
 
     if (accessToken === "null" || accessToken === "undefined") {
@@ -29,38 +29,53 @@ const rawBaseQuery = fetchBaseQuery({
     },
 });
 
+/**
+ * Exchange the refresh token for a new access token.
+ *
+ * Pulled out of the base query because the RAG chat endpoint streams, so it
+ * has to bypass fetchBaseQuery entirely and would otherwise need its own copy
+ * of this. One implementation means one place where the token keys, the
+ * logout-on-failure rule and the request shape are decided.
+ *
+ * Returns whether the session is usable afterwards.
+ */
+export const refreshAccessToken = async (dispatch) => {
+    const refreshToken = localStorage.getItem("refreshToken");
+
+    if (!refreshToken) {
+        dispatch(logout());
+        return false;
+    }
+
+    const response = await fetch(`${API_BASE_URL}/auth/refresh`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ refresh_token: refreshToken }),
+    });
+
+    if (!response.ok) {
+        dispatch(logout());
+        return false;
+    }
+
+    const data = await response.json();
+
+    dispatch(
+        setCredentials({
+            accessToken: data.access_token,
+            refreshToken: data.refresh_token,
+        })
+    );
+
+    return true;
+};
+
 const baseQueryWithRefresh = async (args, api, extraOptions) => {
     let result = await rawBaseQuery(args, api, extraOptions);
 
     if (result.error && result.error.status === 401) {
-        const refreshToken = localStorage.getItem("refreshToken");
-
-        if (!refreshToken) {
-            api.dispatch(logout());
-            return result;
-        }
-
-        const refreshResult = await rawBaseQuery(
-            {
-                url: "/auth/refresh",
-                method: "POST",
-                body: { refresh_token: refreshToken },
-            },
-            api,
-            extraOptions
-        );
-
-        if (refreshResult.data) {
-            api.dispatch(
-                setCredentials({
-                    accessToken: refreshResult.data.access_token,
-                    refreshToken: refreshResult.data.refresh_token,
-                })
-            );
-
+        if (await refreshAccessToken(api.dispatch)) {
             result = await rawBaseQuery(args, api, extraOptions);
-        } else {
-            api.dispatch(logout());
         }
     }
 
@@ -81,6 +96,8 @@ export const api = createApi({
         "Activity",
         "Stats",
         "Member",
+        "Conversation",
+        "ConversationMessage",
     ],
     endpoints: () => ({}),
 });

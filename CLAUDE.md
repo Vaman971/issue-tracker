@@ -397,6 +397,89 @@ in `rag_service.py` while it stays that way.
   would otherwise catch.
 - **Next:** Phase 7 beyond 7.1, if any. Phase 6 and 7.1 are otherwise complete.
 
+---
+
+## FRONTEND
+
+### F1 — `ragApi.js` (DONE, awaiting review)
+
+`frontend/src/store/features/rag/ragApi.js`. `getConversations` and
+`getConversationMessages` are ordinary RTK Query endpoints.
+`sendChatMessage` is not, and cannot be.
+
+**Why chat needs `queryFn`:** `/rag/chat` is `text/event-stream`, and
+`fetchBaseQuery` reads a response to completion before handing it over.
+Routing chat through it works but surrenders streaming — the answer appears
+at once after ~15s instead of the first token after ~2s.
+
+**What a manual fetch loses, and how it was restored:** `fetchBaseQuery` was
+attaching the token and refreshing on 401. `refreshAccessToken` was extracted
+in `store/api.js` and `baseQueryWithRefresh` now uses it too, so there is one
+place that knows the token keys and the logout-on-failure rule. Without this,
+chat would be the single call that fails on an expired token (15 min) while
+every other call quietly refreshes.
+
+**`onDelta` and the serializable check:** the chat mutation takes an
+`onDelta` callback so tokens can render as they arrive. RTK puts a mutation's
+args into the action, and a function is not serialisable, so `store.js`
+exempts `meta.arg.originalArgs.onDelta`. When a `ragSlice` exists, dispatch
+deltas into it instead and remove both the callback and the exemption.
+
+### F2 — `RagChatWidget` (DONE, awaiting review)
+
+`frontend/src/components/RagChatWidget/` (`page.jsx` + `page.module.css`,
+matching the folder convention every other component uses).
+
+**Mounted in `app/(protected)/layout.jsx`, inside `ProtectedRoute`** — so it
+exists on every signed-in page and none of the public ones, with no auth
+check of its own. Rendered through `createPortal` to `document.body`, like
+`NotificationDrawer`.
+
+**Deliberately not a modal.** No backdrop and no body-scroll lock, unlike the
+notification drawer: it is a small floating window, so the app stays visible
+and usable while it is open. z-index 900/901, below the drawer's 1000/1001,
+so opening notifications covers it rather than the two fighting.
+
+**Design** follows `NotificationDrawer` exactly — `#111827` header, `#f4f6f9`
+body, `#2563eb` primary, `#e5e7eb` borders, 0.15s transitions — so the two
+read as one product.
+
+**Behaviour:** streams tokens via the mutation's `onDelta`; `streamingText`
+is kept separate from `messages` so a half-written reply is never mistaken
+for a finished one. A thinking indicator covers the gap before the first
+token (retrieval, ~2s warm and ~15s cold). `conversationId` is held in
+component state and sent back, so follow-ups resolve references against the
+same conversation. Errors show the backend's own user-facing message; a
+`not_persisted` failure still renders its answer, because that answer was
+generated and delivered and only the write failed.
+
+**Not verified by me:** how it looks and feels in a browser. Confirmed only
+that it lints, compiles into the `(protected)/layout` chunk without errors,
+and that the API path underneath it works.
+
+### Frontend gotchas
+
+- **SSE chunk boundaries do not align with frames.** The parser buffers and
+  cuts completed frames off the front. Verified against six chunkings
+  including one byte at a time, a split exactly between the two newlines of a
+  separator, and a multi-byte UTF-8 character straddling a chunk (handled by
+  `TextDecoder({ stream: true })`). Change that function only with those
+  cases in mind.
+- **nginx `/api/` proxies straight to the backend**, not through the Next
+  rewrite. The Next rewrite only applies when hitting Next directly in dev.
+- **Streaming does survive nginx** — measured 217 deltas over a 1.82s spread
+  through the browser path. nginx *consumes* `X-Accel-Buffering` rather than
+  forwarding it, so its absence downstream is normal and is NOT evidence of
+  buffering. Judge buffering by delta spread, and only on a long answer: a
+  short answer has too few deltas to tell.
+- **nginx `proxy_read_timeout` is 60s, `RAG_REQUEST_TIMEOUT_SECONDS` is
+  120s.** It resets per read, so a flowing token stream is safe, but the gap
+  before the first token is one read. A bad cold turn could be cut by nginx
+  before the backend's own ceiling fires, and the client would see a
+  truncated stream instead of the `timeout` error event. Not yet aligned.
+- **`injectEndpoints` registers on import**, so a feature's endpoints only
+  exist once something imports one of its hooks.
+
 ### Cost observation worth remembering
 
 On a cold turn the reranker costs roughly ten times the answer model
