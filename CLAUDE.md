@@ -453,9 +453,36 @@ same conversation. Errors show the backend's own user-facing message; a
 `not_persisted` failure still renders its answer, because that answer was
 generated and delivered and only the write failed.
 
+**Persistence and history (added after review):**
+
+- The active `conversation_id` is kept in `localStorage`
+  (`ragActiveConversationId`), so a reload reopens the same conversation.
+- **The saved transcript is the source of truth** for a conversation that
+  exists server-side: `useGetConversationMessagesQuery` hydration *replaces*
+  the local copy rather than merging. The two cannot disagree, since every
+  turn goes through this component, and replacing is self-correcting.
+- **Hydration is suppressed while a send is in flight.** The refetch that a
+  completed send triggers (`invalidatesTags` on `ConversationMessage`) would
+  otherwise land mid-stream and wipe the question the user just asked. This
+  is the subtle one — if messages ever flicker or vanish during streaming,
+  look here first.
+- Messages carry a `key`: the server row id once saved, a local counter
+  before that. Index keys broke React's reconciliation across the hydration
+  swap.
+- A stored id can outlive its conversation (deleted, or a different account
+  signed in). A 404 from the transcript query clears the stored id and starts
+  fresh rather than leaving the widget stuck.
+- "New chat" clears the id, so the next question makes the backend create a
+  conversation. "History" lists the last 20, most recently active first, with
+  the open one marked the way the drawer marks unread notifications.
+- Both queries are `skip`-ped while the panel is closed, and the history
+  query also while the chat view is showing, so an unopened widget costs
+  nothing.
+
 **Not verified by me:** how it looks and feels in a browser. Confirmed only
 that it lints, compiles into the `(protected)/layout` chunk without errors,
-and that the API path underneath it works.
+and that every endpoint it calls returns the expected shape through the real
+browser path (nginx + `/api`), including 404 for an unknown conversation.
 
 ### Frontend gotchas
 
