@@ -17,5 +17,15 @@ export const store = configureStore({
 
     // handles async request lifecycle, caching, invalidation, polling and refecthing behavior.
     middleware: (getDefaultMiddleware) =>
-        getDefaultMiddleware().concat(api.middleware)
+        getDefaultMiddleware({
+            serializableCheck: {
+                // The RAG chat mutation takes an `onDelta` callback so a
+                // component can render tokens as they stream in. RTK puts a
+                // mutation's arguments into the action, and a function is not
+                // serialisable, so this one path is exempted rather than
+                // giving up streaming. Nothing reads it back out of the store.
+                ignoredActions: ["api/executeMutation/pending"],
+                ignoredPaths: ["meta.arg.originalArgs.onDelta"],
+            },
+        }).concat(api.middleware)
 })

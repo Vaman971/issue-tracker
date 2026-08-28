@@ -1,0 +1,384 @@
+/*
+Palette and metrics follow NotificationDrawer so the two read as one product:
+#111827 header, #f4f6f9 body, #2563eb primary, #e5e7eb borders.
+
+Deliberately NOT a modal — no backdrop and no scroll lock. It is a small
+floating window, so the app stays visible and usable while it is open, and it
+sits below the notification drawer (z-index 1000/1001) rather than fighting it.
+*/
+
+/* ── Launcher ── */
+.launcher {
+    position: fixed;
+    right: 24px;
+    bottom: 24px;
+    z-index: 900;
+    width: 52px;
+    height: 52px;
+    border: none;
+    border-radius: 50%;
+    background: #2563eb;
+    color: #ffffff;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    box-shadow: 0 4px 16px rgba(37, 99, 235, 0.36);
+    transition: background 0.15s, transform 0.15s, box-shadow 0.15s;
+}
+
+.launcher:hover {
+    background: #1d4ed8;
+    transform: translateY(-1px);
+    box-shadow: 0 6px 20px rgba(37, 99, 235, 0.44);
+}
+
+.launcher:focus-visible {
+    outline: 2px solid #60a5fa;
+    outline-offset: 3px;
+}
+
+/* ── Panel ── */
+.panel {
+    position: fixed;
+    right: 24px;
+    bottom: 88px;
+    z-index: 901;
+    width: 380px;
+    max-width: calc(100vw - 32px);
+    height: 520px;
+    max-height: calc(100dvh - 128px);
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+    background: #ffffff;
+    border: 1px solid #e5e7eb;
+    border-radius: 14px;
+    box-shadow: 0 12px 40px rgba(0, 0, 0, 0.18);
+    animation: rise 0.18s ease-out;
+}
+
+@keyframes rise {
+    from {
+        opacity: 0;
+        transform: translateY(8px);
+    }
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .panel {
+        animation: none;
+    }
+}
+
+/* ── Header ── */
+.header {
+    flex-shrink: 0;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    padding: 14px 16px;
+    background: #111827;
+    border-bottom: 1px solid #1f2937;
+}
+
+.headerLeft {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    min-width: 0;
+}
+
+.headerIcon {
+    font-size: 18px;
+    line-height: 1;
+}
+
+.headerTitle {
+    margin: 0;
+    font-size: 14.5px;
+    font-weight: 700;
+    color: #f9fafb;
+    letter-spacing: -0.01em;
+}
+
+.headerSubtitle {
+    margin: 2px 0 0;
+    font-size: 11.5px;
+    font-weight: 500;
+    color: #9ca3af;
+}
+
+.closeBtn {
+    width: 30px;
+    height: 30px;
+    flex-shrink: 0;
+    border: 1px solid #374151;
+    border-radius: 8px;
+    background: transparent;
+    color: #9ca3af;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: background 0.15s, color 0.15s, border-color 0.15s;
+}
+
+.closeBtn:hover {
+    background: rgba(255, 255, 255, 0.08);
+    border-color: #4b5563;
+    color: #f9fafb;
+}
+
+/* ── Message list ── */
+.body {
+    flex: 1;
+    overflow-y: auto;
+    padding: 14px;
+    background: #f4f6f9;
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    scrollbar-width: thin;
+    scrollbar-color: #d1d5db transparent;
+}
+
+.body::-webkit-scrollbar {
+    width: 4px;
+}
+
+.body::-webkit-scrollbar-track {
+    background: transparent;
+}
+
+.body::-webkit-scrollbar-thumb {
+    background: #d1d5db;
+    border-radius: 4px;
+}
+
+/* ── Empty state ── */
+.emptyState {
+    margin: auto;
+    padding: 24px 12px;
+    text-align: center;
+}
+
+.emptyIcon {
+    font-size: 34px;
+    opacity: 0.35;
+    display: block;
+    margin-bottom: 10px;
+}
+
+.emptyTitle {
+    margin: 0;
+    font-size: 14px;
+    font-weight: 700;
+    color: #374151;
+}
+
+.emptyText {
+    margin: 5px 0 0;
+    font-size: 12.5px;
+    line-height: 1.5;
+    color: #9ca3af;
+}
+
+/* ── Bubbles ── */
+.userRow,
+.assistantRow {
+    display: flex;
+}
+
+.userRow {
+    justify-content: flex-end;
+}
+
+.assistantRow {
+    justify-content: flex-start;
+}
+
+.userBubble,
+.assistantBubble {
+    max-width: 85%;
+    padding: 9px 12px;
+    border-radius: 12px;
+    font-size: 13px;
+    line-height: 1.55;
+    /* answers arrive as newline-separated lists, so keep the breaks */
+    white-space: pre-wrap;
+    overflow-wrap: anywhere;
+}
+
+.userBubble {
+    background: #2563eb;
+    color: #ffffff;
+    border-bottom-right-radius: 4px;
+}
+
+.assistantBubble {
+    background: #ffffff;
+    color: #374151;
+    border: 1px solid #e5e7eb;
+    border-bottom-left-radius: 4px;
+}
+
+/* blinking cursor while tokens are still arriving */
+.caret {
+    display: inline-block;
+    width: 2px;
+    height: 13px;
+    margin-left: 2px;
+    vertical-align: text-bottom;
+    background: #2563eb;
+    animation: blink 1s steps(2, start) infinite;
+}
+
+@keyframes blink {
+    50% {
+        opacity: 0;
+    }
+}
+
+/* ── Thinking indicator ── */
+.thinkingBubble {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    padding: 12px 14px;
+    background: #ffffff;
+    border: 1px solid #e5e7eb;
+    border-radius: 12px;
+    border-bottom-left-radius: 4px;
+}
+
+.dot {
+    width: 6px;
+    height: 6px;
+    border-radius: 50%;
+    background: #9ca3af;
+    animation: pulse 1.2s ease-in-out infinite;
+}
+
+.dot:nth-child(2) {
+    animation-delay: 0.15s;
+}
+
+.dot:nth-child(3) {
+    animation-delay: 0.3s;
+}
+
+@keyframes pulse {
+    0%, 60%, 100% {
+        opacity: 0.3;
+    }
+    30% {
+        opacity: 1;
+    }
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .caret,
+    .dot {
+        animation: none;
+    }
+}
+
+/* ── Error ── */
+.error {
+    margin: 0;
+    padding: 9px 12px;
+    font-size: 12.5px;
+    line-height: 1.5;
+    color: #dc2626;
+    background: #fff5f5;
+    border: 1px solid #fee2e2;
+    border-radius: 10px;
+}
+
+/* ── Composer ── */
+.composer {
+    flex-shrink: 0;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 10px 12px;
+    background: #ffffff;
+    border-top: 1px solid #e5e7eb;
+}
+
+.input {
+    flex: 1;
+    min-width: 0;
+    padding: 9px 12px;
+    font-size: 13px;
+    font-family: inherit;
+    color: #111827;
+    background: #ffffff;
+    border: 1px solid #e5e7eb;
+    border-radius: 9px;
+    transition: border-color 0.15s, box-shadow 0.15s;
+}
+
+.input::placeholder {
+    color: #9ca3af;
+}
+
+.input:focus {
+    outline: none;
+    border-color: #2563eb;
+    box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.12);
+}
+
+.input:disabled {
+    background: #f9fafb;
+    cursor: not-allowed;
+}
+
+.sendBtn {
+    width: 36px;
+    height: 36px;
+    flex-shrink: 0;
+    border: none;
+    border-radius: 9px;
+    background: #2563eb;
+    color: #ffffff;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: background 0.15s;
+}
+
+.sendBtn:hover:not(:disabled) {
+    background: #1d4ed8;
+}
+
+.sendBtn:disabled {
+    opacity: 0.45;
+    cursor: not-allowed;
+}
+
+.sendBtn:focus-visible {
+    outline: 2px solid #60a5fa;
+    outline-offset: 2px;
+}
+
+/* ── Mobile ── */
+@media (max-width: 520px) {
+    .launcher {
+        right: 16px;
+        bottom: 16px;
+        width: 48px;
+        height: 48px;
+    }
+
+    .panel {
+        right: 16px;
+        left: 16px;
+        bottom: 76px;
+        width: auto;
+        max-height: calc(100dvh - 108px);
+    }
+}
