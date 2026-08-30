@@ -40,7 +40,8 @@ def _total_cost(trace: RAGTrace) -> float:
     """
 
     return (
-        trace.query.rewrite.cost_usd
+        trace.query.route.cost_usd
+        + trace.query.rewrite.cost_usd
         + trace.query.filter.cost_usd
         + trace.query.multi_query.cost_usd
         + trace.query.rerank.cost_usd
@@ -55,6 +56,16 @@ class TracePrinter:
 
         _heading("QUESTION", MAJOR)
         print(trace.question)
+        print()
+
+        _heading("ROUTE")
+        print(_row("Intent", trace.query.route.intent))
+        print(_row("Path", "deterministic" if trace.query.route.deterministic else "LLM"))
+        if not trace.query.route.deterministic:
+            print(_row("Cache Hit", bool(trace.query.route.cache_hit)))
+            print(_row("Model", trace.query.route.model))
+        print(_row("Cost", f"${trace.query.route.cost_usd:.4f}"))
+        print(_row("Time", format_ms(trace.query.route.duration_ms)))
         print()
 
         _heading("REWRITE")

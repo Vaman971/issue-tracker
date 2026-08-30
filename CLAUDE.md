@@ -399,9 +399,107 @@ in `rag_service.py` while it stays that way.
 
 ---
 
+## PHASE 8 — SCOPE CONTROL
+
+### 8.1 — RouterStage (DONE, awaiting review)
+
+**Problem:** the pipeline was unconditionally retrieval-first, so "Hello how
+can you help me?" was embedded like any other query, retrieval returned its
+five nearest neighbours (there is always a nearest neighbour), and `answer.j2`
+listed them. The answer prompt could not be the fix — it deliberately says
+"Never refuse merely because the context is incomplete", which is the
+behaviour the retrieval tuning depends on.
+
+**Approach:** intent routing before retrieval, the standard pattern (search
+terms: query routing, intent classification, `semantic-router`, LlamaIndex
+`RouterQueryEngine`). Not guardrails frameworks (new dependency) and not
+agentic tool-calling (a pipeline rewrite).
+
+`app/rag/routing/` mirrors `app/rag/filtering/` exactly — `schemas.py`,
+`base.py`, `deterministic.py`, `openai_router.py`, plus `responses.py`.
+`RouterStage` runs first and is structured like `FilterStage`: deterministic
+pass, LLM fallback, cache over the fallback.
+
+**Four intents, four outcomes:** `KNOWLEDGE` runs the pipeline unchanged;
+`CAPABILITY`, `ACKNOWLEDGEMENT` and `OUT_OF_SCOPE` are answered from **fixed
+strings** in `routing/responses.py`. Static on purpose — "what can you do?" has an answer
+the product's author owns, and letting the model improvise it invites a
+confident description of features that do not exist. Zero cost, zero latency,
+cannot be prompt-injected.
+
+**How the pipeline stops:** one `break` in `QueryPipeline.process` when
+`processed.intent` is not `KNOWLEDGE`. No new abstraction, no per-stage
+`should_run` edits. `ProcessedQuery.intent` defaults to `KNOWLEDGE`, so
+`scripts/chat.py` and the eval harness — which build their own pipeline with
+no router — behave exactly as before.
+
+**Two decisions that matter:**
+
+- **Follow-ups are settled deterministically, before any LLM call.** A
+  fragment like "and the critical ones?" carries almost no topic of its own,
+  and a classifier reading it alone will call it chitchat — silently breaking
+  reference resolution. `route_deterministic` checks
+  `REFERENCE_PATTERN` / `CONTINUATION_PATTERN` (reused from
+  `reference_resolver`, so the router and the resolver cannot disagree) and
+  returns `KNOWLEDGE` when there is history. This is also why the route cache
+  can key on the message alone: the history-dependent case never reaches it.
+- **A routed turn returns before `update_state`.** `last_result_ids` is what
+  makes follow-ups work; a greeting has no results, so writing state would
+  throw away the reference context the next real question needs. Verified:
+  question -> "thanks!" -> "and the critical ones?" still scopes to the first
+  turn's five results and returns the three critical ones.
+
+**Every failure degrades to the old behaviour.** Unparseable JSON, an unknown
+label, or no router configured all resolve to `KNOWLEDGE`. A broken
+classifier costs a search, not a refused question.
+
+**Measured:**
+
+| turn | latency | cost |
+|---|---|---|
+| "Hello how can you help me?" | 72ms | **$0** (deterministic) |
+| "thanks" | 20ms | **$0** |
+| "i had a breakup last week..." | 4.5s | $0.00073 (was ~$0.009) |
+| real question | 15.6s | $0.0097, of which routing $0.00069 |
+| follow-up | 5.6s | routing $0 |
+
+So routing costs real questions about **7% more**, and makes junk questions
+free or near-free. 17 deterministic cases pass, including the ones that must
+NOT be swallowed ("hi, which issues are blocked?" goes to the LLM, not to a
+greeting reply).
+
+**`ACKNOWLEDGEMENT` (added after review).** "thanks" used to get the full
+capability description, which reads as a non sequitur right after the
+assistant answered something. Three patterns now, checked in this order:
+
+1. `CAPABILITY_PATTERN` — first, because "help" is a capability question
+   while "hi" is not, and a looser ordering would let the shorter pattern win
+2. `GREETING_PATTERN` — "hi", "good morning". Deliberately still answered
+   with the CAPABILITY reply: someone who has just said hi is about to ask
+   what this thing does, so orienting them is the right move
+3. `ACKNOWLEDGEMENT_PATTERN` — "thanks", "ok", "got it", "perfect", "bye" ->
+   "You're welcome. Tell me what else you would like me to find…"
+
+The label is in `route_query.j2` too, so "thanks, that was really helpful" —
+which no regex will fullmatch — is classified rather than treated as a
+question.
+
+23 deterministic cases pass, including the collisions that matter:
+"thanks, now show me critical bugs" and "ok what about the payments project"
+go to the LLM rather than being swallowed, and "ok, and the high priority
+ones?" with history is still KNOWLEDGE.
+
+**Next:** 8.2 retrieval-confidence gating — refuse when the top rerank score
+is below a threshold. Catches the other failure: in-scope question, nothing
+relevant found. The score is already in `RerankTrace`.
+
+---
+
 ## FRONTEND
 
-### F1 — `ragApi.js` (DONE, awaiting review)
+Complete and approved. Both steps below are done.
+
+### F1 — `ragApi.js` (DONE, approved)
 
 `frontend/src/store/features/rag/ragApi.js`. `getConversations` and
 `getConversationMessages` are ordinary RTK Query endpoints.
@@ -425,7 +523,7 @@ args into the action, and a function is not serialisable, so `store.js`
 exempts `meta.arg.originalArgs.onDelta`. When a `ragSlice` exists, dispatch
 deltas into it instead and remove both the callback and the exemption.
 
-### F2 — `RagChatWidget` (DONE, awaiting review)
+### F2 — `RagChatWidget` (DONE, approved)
 
 `frontend/src/components/RagChatWidget/` (`page.jsx` + `page.module.css`,
 matching the folder convention every other component uses).

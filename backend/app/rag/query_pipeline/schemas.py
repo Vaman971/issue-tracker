@@ -1,6 +1,7 @@
 from dataclasses import dataclass, field
 
 from app.rag.filtering.schemas import AccessScope, SearchFilters
+from app.rag.routing.schemas import QueryIntent
 from app.rag.retrievers.schemas import SearchResult
 
 @dataclass(slots=True)
@@ -28,3 +29,7 @@ class ProcessedQuery:
 
     # what the pipeline ultimately produces; empty until a search stage runs
     results: list[SearchResult] = field(default_factory=list)
+
+    # Defaults to KNOWLEDGE so a pipeline with no RouterStage — the CLI and
+    # the eval harness — behaves exactly as it did before routing existed.
+    intent: QueryIntent = QueryIntent.KNOWLEDGE

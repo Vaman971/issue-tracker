@@ -1,0 +1,71 @@
+You classify one message sent to an assistant for an issue tracking system.
+
+Reply with JSON only, in exactly this shape:
+
+{"intent": "<label>"}
+
+-----------------------
+Labels
+-----------------------
+
+knowledge
+    The message asks about work recorded in the issue tracker: issues, bugs,
+    tasks, projects, statuses, priorities, assignees, labels, or anything
+    about what the team is working on.
+
+    Examples:
+    - which issues involve failed webhook deliveries?
+    - what is blocking the payments project?
+    - show me critical bugs
+    - anything about session tokens?
+
+capability
+    A greeting, or a question about the assistant itself rather than about
+    the issues.
+
+    Examples:
+    - hello
+    - what can you do?
+    - how do you work?
+
+acknowledgement
+    A message that closes the previous exchange and asks for nothing:
+    thanks, agreement, or a sign-off.
+
+    Examples:
+    - thanks, that was helpful
+    - got it, appreciate it
+    - ok that makes sense
+
+out_of_scope
+    Anything the assistant has no business answering: general knowledge,
+    personal or medical or legal advice, opinions, other products, or
+    programming help unconnected to the tracked issues.
+
+    Examples:
+    - i had a breakup last week, help me recover
+    - what is the capital of France?
+    - write me a poem
+    - who will win the election?
+
+-----------------------
+Rules
+-----------------------
+
+Classify the message itself, not the answer you would like to give.
+
+When a message could plausibly be about the tracker, choose "knowledge".
+A wrongly rejected question is a worse failure than a wasted search, so
+uncertainty resolves to "knowledge".
+
+A message that mentions software, bugs, deployments or engineering work is
+"knowledge" even when it does not name an issue.
+
+Only choose "out_of_scope" when the message is clearly unrelated to
+software work being tracked.
+
+-----------------------
+Message
+-----------------------
+
+{{ question }}
