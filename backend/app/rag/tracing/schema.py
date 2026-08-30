@@ -171,12 +171,39 @@ class RerankTrace:
 
 
 @dataclass(slots=True)
+class RouteTrace:
+
+    intent: str = "knowledge"
+
+    # answered by regex rather than by the model
+    deterministic: bool = False
+
+    cache_hit: bool = False
+
+    duration_ms: float = 0.0
+
+    # zero when the stage was skipped, served from cache, or resolved
+    # deterministically — see the stage that writes them
+    model: str = ""
+
+    input_tokens: int = 0
+
+    output_tokens: int = 0
+
+    reasoning_tokens: int = 0
+
+    cost_usd: float = 0.0
+
+
+@dataclass(slots=True)
 class QueryTrace:
     """Everything the query pipeline records.
 
     Stages receive only this, so a stage cannot reach into the answer-side
     tracing that RAGService owns.
     """
+
+    route: RouteTrace = field(default_factory=RouteTrace)
 
     rewrite: RewriteTrace = field(default_factory=RewriteTrace)
 

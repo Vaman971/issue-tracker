@@ -30,10 +30,12 @@ from app.rag.query_pipeline.stages.multi_query import MultiQueryStage
 from app.rag.query_pipeline.stages.parallel import ParallelQueryStage
 from app.rag.query_pipeline.stages.rerank import RerankStage
 from app.rag.query_pipeline.stages.rewrite import RewriteStage
+from app.rag.query_pipeline.stages.router import RouterStage
 from app.rag.query_pipeline.stages.search import SearchStage
 from app.rag.query_rewriter.openai_rewriter import OpenAIQueryRewriter
 from app.rag.reranking.reranker import OpenAiReranker
 from app.rag.retrievers.hybrid import HybridRetriever
+from app.rag.routing.openai_router import OpenAIQueryRouter
 from app.rag.services.rag_service import RAGService
 
 SEARCH_TOP_K = 15
@@ -54,6 +56,11 @@ def _shared_components() -> tuple[QueryPipeline, ContextBuilder, PromptTemplateL
 
     pipeline = QueryPipeline(
         stages=[
+            # first: everything after it assumes the turn is a question
+            # about issues
+            RouterStage(
+                router=OpenAIQueryRouter(prompt_loader=prompt_loader),
+            ),
             RewriteStage(
                 rewriter=OpenAIQueryRewriter(prompt_loader=prompt_loader),
             ),

@@ -20,6 +20,7 @@ from app.rag.memory.reference_resolver import ReferenceResolver
 from app.rag.prompts.loader import PromptTemplateLoader
 from app.rag.query_pipeline.base import BaseQueryPipeline
 from app.rag.query_pipeline.schemas import QueryRequest
+from app.rag.routing.responses import reply_for
 from app.rag.services.schema import RAGResponse
 from app.rag.tracing.schema import PromptTrace, RAGTrace
 from app.rag.tracing.printer import TracePrinter
@@ -42,6 +43,11 @@ class PreparedTurn:
     context: list
     trace: RAGTrace
     total_timer: Timer
+
+    # Set when the router decided this turn needs no model: a greeting, or a
+    # question outside what the assistant covers. `prompt` is then empty and
+    # no LLM call is made.
+    direct_answer: str | None = None
 
 class RAGService:
 
@@ -139,6 +145,22 @@ class RAGService:
             ),
             trace=trace.query,
         )
+
+        direct_answer = reply_for(processed.intent)
+
+        if direct_answer is not None:
+            # Returns before the state update on purpose. `last_result_ids` is
+            # what makes "and the critical ones?" work, and a greeting has no
+            # results — overwriting the state with an empty list would throw
+            # away the reference context the next real question needs.
+            return PreparedTurn(
+                question=question,
+                prompt="",
+                context=[],
+                trace=trace,
+                total_timer=total_timer,
+                direct_answer=direct_answer,
+            )
 
         # update the state of the memory
         if self.memory:
@@ -280,6 +302,15 @@ class RAGService:
 
         prepared = await self._prepare(question)
 
+        if prepared.direct_answer is not None:
+            return await self._finalise(
+                prepared=prepared,
+                answer=prepared.direct_answer,
+                usage=LLMUsage(),
+                ttft_ms=0.0,
+                ttlt_ms=0.0,
+            )
+
         timer = Timer()
         chunks: list[str] = []
         ttft_ms = 0.0
@@ -313,6 +344,20 @@ class RAGService:
         """
 
         prepared = await self._prepare(question)
+
+        if prepared.direct_answer is not None:
+            # one delta rather than a stream: the text already exists, and the
+            # client's SSE contract is the same either way
+            yield prepared.direct_answer
+
+            await self._finalise(
+                prepared=prepared,
+                answer=prepared.direct_answer,
+                usage=LLMUsage(),
+                ttft_ms=0.0,
+                ttlt_ms=0.0,
+            )
+            return
 
         timer = Timer()
         chunks: list[str] = []

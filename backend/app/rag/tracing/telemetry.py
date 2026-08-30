@@ -114,6 +114,7 @@ def _model_stages(trace: RAGTrace) -> dict:
     """
 
     return {
+        "route": trace.query.route,
         "rewrite": trace.query.rewrite,
         "filter": trace.query.filter,
         "multi_query": trace.query.multi_query,
