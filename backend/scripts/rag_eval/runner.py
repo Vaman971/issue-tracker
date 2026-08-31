@@ -67,7 +67,12 @@ PRODUCTION_RRF_K = settings.DAMPING_CONSTANT
 # what ConfidenceGateStage would do with each case
 MIN_RELEVANCE = settings.RAG_MIN_RELEVANCE_SCORE
 
-SOURCE_PATTERN = re.compile(r"issue:(\d+)")
+# Only ids in the entry position count as citations. The answer format writes
+# them as "(#2724)"; a bare "#2155" inside a description is a cross-reference
+# the model happened to mention, not a result it returned, and counting those
+# understated precision by six points. "issue:2724" stays matched so runs from
+# before the format change remain comparable.
+SOURCE_PATTERN = re.compile(r"(?:issue:|\(#)(\d+)")
 
 
 def consolidate(results: list[SearchResult], top_n: int) -> list[int]:

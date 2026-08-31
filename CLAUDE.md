@@ -675,6 +675,64 @@ That is the correct trade for a benchmark.
 (`admin12345`) on a backend restart, so a test script that reset it will fail
 with 401 afterwards.
 
+### 8.5 — Answer tone and format (DONE, awaiting review)
+
+**Problem:** answers read as a database dump — `- issue:276 — title — todo,
+critical` and nothing else. No framing, no substance, and the raw
+`issue:NNN` token is a developer's identifier, not a reader's.
+
+**Constraints that shaped the rewrite:**
+- The widget renders `white-space: pre-wrap` plain text with **no markdown**,
+  so `**bold**` would display literal asterisks. Plain text only.
+- `scripts/rag_eval/runner.py` parses ids out of the answer, so changing the
+  citation format breaks the harness unless its pattern changes too.
+
+**New format:** a short opening line that matches the number of results, then
+one entry per issue as `- <title> (#2724)` / `<priority>, <status>. <one
+sentence on what it is>`, then a single closing line offering to narrow by
+status, priority or project. Status and priority are written the way a person
+says them — "in progress", not "in_progress".
+
+**The `(no title)` bug is real and now quantified:** **15 of 2749 chunks**
+have no `Title:` line, because the title fell outside a non-zero chunk's
+boundary, and `metadata_json` carries only priority/project/status — no
+title. Issue 2725 is one of them and is retrieved often. Patched in the
+prompt (write a title from the content, never a placeholder), which works.
+**The real fix is at ingestion** — put the title in `metadata_json`, or
+repeat it in every chunk — and that needs a full re-index, so it is a
+decision, not a patch.
+
+**What it cost, measured:**
+
+| | before | after |
+|---|---|---|
+| answer output tokens | ~100 | ~195-293 |
+| answer cost | ~$0.0005 | ~$0.0010 |
+| turn cost | ~$0.0054 | ~$0.0059 (+9%) |
+| answer recall@5 | 0.978 | 0.957-0.978 |
+| answer hit@5 | 1.000 | **1.000, 0 misses** |
+| answer precision@5 | 0.942-0.949 | **0.826-0.891** |
+
+**Precision fell about 0.10 and I could not recover it.** The cause is
+specific: in roughly 5-7 cases of 23 the model now lists one extra
+plausibly-related issue alongside the right one — writing a sentence about
+each issue seems to make it more inclusive. A "do not pad the list" rule was
+added to `answer.j2` and did **not** measurably move the number; it is kept
+because it states the intent, not because it works.
+
+Worth weighing before accepting: recall and hit@5 are untouched, so nothing
+is *missed*. Whether one extra related issue is noise or context is a product
+call. Reverting the format restores precision.
+
+**Do not read single eval runs as signal here.** With caching disabled every
+run re-generates expansions and answers, and across four runs of the same
+config precision moved by 0.06 on its own. Compare medians of several runs,
+or accept a band.
+
+**`SOURCE_PATTERN` now matches `(?:issue:|\(#)(\d+)`** — entry position
+only. A bare `#2155` inside a description is a cross-reference the model
+mentioned, not a result it returned.
+
 ---
 
 ## FRONTEND
