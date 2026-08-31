@@ -35,6 +35,14 @@ OUT_OF_SCOPE_REPLY = (
     "Try asking about a bug, a status, or a project you work on."
 )
 
+# Not a routing intent: this one is chosen after retrieval, when the search
+# ran but found nothing relevant enough. It lives here because this module is
+# where every reply that skips the answer model lives, and keeping the
+# user-facing copy in one file is worth more than a tidier import graph.
+NO_MATCH_REPLY = """I could not find anything relevant to that in the issues you have access to.
+
+Try rephrasing it, or naming the project or component you mean."""
+
 _REPLIES = {
     QueryIntent.CAPABILITY: CAPABILITY_REPLY,
     QueryIntent.ACKNOWLEDGEMENT: ACKNOWLEDGEMENT_REPLY,

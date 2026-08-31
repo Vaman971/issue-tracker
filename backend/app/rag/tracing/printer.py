@@ -155,6 +155,12 @@ class TracePrinter:
         print(_row("Time", format_ms(trace.query.rerank.duration_ms)))
         print()
 
+        _heading("GATE")
+        print(_row("Top score", f"{trace.query.gate.top_score:.2f}"))
+        print(_row("Threshold", f"{trace.query.gate.threshold:.2f}"))
+        print(_row("Passed", bool(trace.query.gate.passed)))
+        print()
+
         _heading("LLM")
         print(_row("Model", trace.llm.model))
         print(_row("Input Tokens", trace.llm.input_tokens))

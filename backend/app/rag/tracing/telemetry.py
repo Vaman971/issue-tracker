@@ -37,6 +37,7 @@ class TelemetryRecord:
 
     # milliseconds, rounded — sub-microsecond precision is noise here
     total_latency: float
+    route_latency: float
     rewrite_latency: float
     filter_latency: float
     multi_query_latency: float
@@ -47,6 +48,7 @@ class TelemetryRecord:
 
     cache_hits_misses: dict
     retrieval_candidate_count: int
+    retrieval_top_score: float
     model_used: str
     input_output_tokens: dict
     cost: dict
@@ -62,6 +64,7 @@ class TelemetryRecord:
             "request_id": self.request_id,
             "conversation_id": self.conversation_id,
             "total_latency": self.total_latency,
+            "route_latency": self.route_latency,
             "rewrite_latency": self.rewrite_latency,
             "filter_latency": self.filter_latency,
             "multi_query_latency": self.multi_query_latency,
@@ -71,6 +74,7 @@ class TelemetryRecord:
             "LLM_total_latency": self.LLM_total_latency,
             "cache_hits_misses": self.cache_hits_misses,
             "retrieval_candidate_count": self.retrieval_candidate_count,
+            "retrieval_top_score": self.retrieval_top_score,
             "model_used": self.model_used,
             "input_output_tokens": self.input_output_tokens,
             "cost": self.cost,
@@ -196,6 +200,7 @@ def build_record(
         request_id=request_id,
         conversation_id=str(conversation_id) if conversation_id else None,
         total_latency=_ms(trace.total_duration_ms),
+        route_latency=_ms(query.route.duration_ms),
         rewrite_latency=_ms(query.rewrite.duration_ms),
         filter_latency=_ms(query.filter.duration_ms),
         multi_query_latency=_ms(query.multi_query.duration_ms),
@@ -206,6 +211,9 @@ def build_record(
         cache_hits_misses=_cache_hits_misses(trace),
         # what retrieval handed to the reranker, before it narrowed the set
         retrieval_candidate_count=len(query.retrieval.final_results),
+        # an extension to the agreed payload: the number the confidence
+        # threshold is tuned against, which cannot be recovered from the rest
+        retrieval_top_score=round(query.gate.top_score, 4),
         model_used=trace.llm.model,
         input_output_tokens=_tokens(trace),
         cost=_cost(trace),

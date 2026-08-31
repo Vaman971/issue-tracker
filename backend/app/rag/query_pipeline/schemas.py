@@ -33,3 +33,13 @@ class ProcessedQuery:
     # Defaults to KNOWLEDGE so a pipeline with no RouterStage — the CLI and
     # the eval harness — behaves exactly as it did before routing existed.
     intent: QueryIntent = QueryIntent.KNOWLEDGE
+
+    # The reranker's score for the best result, 0..1. None means no usable
+    # relevance judgement exists — nothing was retrieved, no reranker ran, or
+    # the model's output could not be parsed — and the confidence gate must
+    # then stay out of the way rather than guess.
+    top_relevance: float | None = None
+
+    # Set by ConfidenceGateStage: retrieval ran and returned nothing good
+    # enough to answer from.
+    low_confidence: bool = False

@@ -20,7 +20,7 @@ from app.rag.memory.reference_resolver import ReferenceResolver
 from app.rag.prompts.loader import PromptTemplateLoader
 from app.rag.query_pipeline.base import BaseQueryPipeline
 from app.rag.query_pipeline.schemas import QueryRequest
-from app.rag.routing.responses import reply_for
+from app.rag.routing.responses import NO_MATCH_REPLY, reply_for
 from app.rag.services.schema import RAGResponse
 from app.rag.tracing.schema import PromptTrace, RAGTrace
 from app.rag.tracing.printer import TracePrinter
@@ -147,6 +147,11 @@ class RAGService:
         )
 
         direct_answer = reply_for(processed.intent)
+
+        # retrieval ran and found nothing worth answering from. Checked after
+        # the intent so a greeting is never reported as a failed search.
+        if direct_answer is None and processed.low_confidence:
+            direct_answer = NO_MATCH_REPLY
 
         if direct_answer is not None:
             # Returns before the state update on purpose. `last_result_ids` is

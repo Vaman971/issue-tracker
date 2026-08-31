@@ -489,9 +489,62 @@ question.
 go to the LLM rather than being swallowed, and "ok, and the high priority
 ones?" with history is still KNOWLEDGE.
 
-**Next:** 8.2 retrieval-confidence gating — refuse when the top rerank score
-is below a threshold. Catches the other failure: in-scope question, nothing
-relevant found. The score is already in `RerankTrace`.
+### 8.2 — ConfidenceGateStage (DONE, awaiting review)
+
+**Problem the router cannot solve:** a question that genuinely belongs to
+this system, about something the corpus has no answer for. Vector search
+always returns its nearest neighbours, so the answer prompt got five
+unrelated issues and listed them.
+
+**The score had to be recovered first.** `RerankStage` did
+`processed.results = [item.result for item in reranked.results]`, which drops
+`RerankResult.score` — `SearchResult.score` is the RRF value, not a relevance
+judgement. `ProcessedQuery.top_relevance` now carries it.
+
+**The trap that would have caused a regression:** when the reranker's JSON
+cannot be parsed it falls back to passing candidates through in retrieval
+order, and their scores are RRF values (~0.03). Gating on those would refuse
+a perfectly good answer every time the reranker hiccuped. So
+`RerankResponse.model_scored` records whether the model judged anything, and
+`top_relevance` is **None** when it did not. The gate treats None as "no
+evidence", not "bad evidence", and stays out of the way.
+
+**Threshold measured, not guessed:**
+
+| | top score |
+|---|---|
+| six questions with real matches | **0.74 – 0.99** |
+| six plausible questions with nothing in the corpus | **0.06 – 0.18** |
+
+`RAG_MIN_RELEVANCE_SCORE = 0.35` sits in that gap with about a factor of two
+of headroom either side. **Re-measure before changing the reranker's model or
+prompt** — the scores are that model's opinion and nothing more.
+
+`ConfidenceGateStage` runs last, after consolidation, so it judges exactly
+the set the answer model would have received. `NO_MATCH_REPLY` lives in
+`routing/responses.py` with the other fixed replies — it is not a routing
+intent, but that module is where every reply that skips the answer model
+lives, and one file of user-facing copy beats a tidier import graph.
+
+**Verified:** 3 relevant questions answered, 3 irrelevant declined, none
+wrong. A declined turn shows `LLM_total_latency: 0` — the answer model is
+never called. A *repeated* irrelevant question costs **26ms and $0**: the
+search cache returns the empty set and the gate fires before anything runs.
+
+**Gating is a correctness win, not a cost win.** A first-time declined turn
+still pays for retrieval and reranking — about $0.009 of a $0.0096 turn —
+because rerank is where the money goes. Only the ~$0.0005 answer call is
+saved.
+
+**Telemetry gained `retrieval_top_score` and `route_latency`,** both
+extensions to the agreed payload. The first is the number the threshold is
+tuned against and cannot be recovered from the rest; the second was simply
+missing after 8.1 added a stage.
+
+**Next, and last: reranker latency.** Measured across six cold turns,
+`rerank_latency` was 1ms, 3.9s, 4.6s, 10.7s, 30.0s and **45.2s** — the
+variance, not the mean, is what makes a turn feel broken. The 45.2s turn
+totalled 67.9s, which also exceeds nginx's 60s `proxy_read_timeout`.
 
 ---
 

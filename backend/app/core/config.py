@@ -81,6 +81,16 @@ class Settings(BaseSettings):
     OPENAI_REASONING_EFFORT: str = "minimal"
     DAMPING_CONSTANT: int = 30
 
+    # Below this reranker score the best retrieved result is not relevant
+    # enough to answer from, and the turn is declined instead.
+    #
+    # Measured rather than guessed: across six questions with real matches
+    # the top score ran 0.74-0.99, and across six plausible questions with
+    # nothing in the corpus it ran 0.06-0.18. 0.35 sits in that gap with
+    # roughly a factor of two of headroom either side. Re-measure before
+    # changing the reranker model or its prompt.
+    RAG_MIN_RELEVANCE_SCORE: float = 0.35
+
     # Ceiling on one /rag/chat turn, covering retrieval and generation.
     # The per-downstream timeouts below sit underneath it.
     RAG_REQUEST_TIMEOUT_SECONDS: int = 120

@@ -155,6 +155,14 @@ class RerankTrace:
 
     final_count: int = 0
 
+    # the reranker's relevance score for the best candidate, 0..1. Zero when
+    # nothing was retrieved or when the model's output could not be parsed.
+    top_score: float = 0.0
+
+    # whether that score is a model judgement at all — see
+    # RerankResponse.model_scored
+    model_scored: bool = True
+
     duration_ms: float = 0.0
 
     model: str = ""
@@ -196,6 +204,21 @@ class RouteTrace:
 
 
 @dataclass(slots=True)
+class GateTrace:
+    """What the confidence gate saw and decided.
+
+    No duration: the gate is a numeric comparison, not work.
+    """
+
+    threshold: float = 0.0
+
+    top_score: float = 0.0
+
+    # False means the turn was declined without calling the answer model
+    passed: bool = True
+
+
+@dataclass(slots=True)
 class QueryTrace:
     """Everything the query pipeline records.
 
@@ -214,6 +237,8 @@ class QueryTrace:
     retrieval: RetrievalTrace = field(default_factory=RetrievalTrace)
 
     rerank: RerankTrace = field(default_factory=RerankTrace)
+
+    gate: GateTrace = field(default_factory=GateTrace)
 
 
 @dataclass(slots=True)
