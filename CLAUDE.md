@@ -541,10 +541,139 @@ extensions to the agreed payload. The first is the number the threshold is
 tuned against and cannot be recovered from the rest; the second was simply
 missing after 8.1 added a stage.
 
-**Next, and last: reranker latency.** Measured across six cold turns,
-`rerank_latency` was 1ms, 3.9s, 4.6s, 10.7s, 30.0s and **45.2s** — the
-variance, not the mean, is what makes a turn feel broken. The 45.2s turn
-totalled 67.9s, which also exceeds nginx's 60s `proxy_read_timeout`.
+### 8.3 — Reranker latency (DONE, awaiting review)
+
+**The prompt was not the problem.** Eight calls with byte-identical input
+returned byte-identical output (323 tokens, 0 reasoning) in **3.49s to
+59.95s** — 92.6 tok/s against 5.4 tok/s for the same work. Output length,
+candidate count and reasoning effort were all ruled out by measurement:
+
+| lever | effect |
+|---|---|
+| top_k 3 -> 15 (117 -> 472 output tokens) | 3.97s -> 4.16s, i.e. none |
+| candidates 5 -> 15 (919 -> 1887 input tokens) | 2.25s -> 4.10s, mild |
+| same input, repeated | **3.49s -> 59.95s** |
+
+**The tail is the API stalling.** Proven by disabling retries: an attempt
+timed out at exactly **30.04s**, the per-attempt budget. So a stall in
+production cost 30s before the retry even began, and 30 + 30 explains the
+59.95s.
+
+**Fix: size the timeout to the operation.** `build_openai_client(timeout=…)`
+now takes an override, and `OPENAI_STRUCTURED_TIMEOUT_SECONDS` (10s) applies
+to the five adapters that return a short JSON payload — router, rewriter,
+filter, multi-query, reranker. The answer model and the embedder keep the 30s
+default; the answer model streams, so its time is spent producing tokens the
+user is already reading.
+
+**Measured, 14 paced calls each:**
+
+| | median | worst |
+|---|---|---|
+| 30s budget (before) | 4.97s | **59.95s** |
+| 10s budget (after) | 3.75s | **13.88s** |
+
+The median is untouched — normal calls never approach either budget. A stall
+now costs 10s plus a ~4s retry instead of 30s plus a retry.
+
+**Caveat worth remembering:** a cut attempt may still be billed for whatever
+the server generated, so a stall that retries twice could cost up to three
+reranks. Rerank is already the dominant spend, so if the bill looks wrong,
+look here first.
+
+**Not yet done:** nginx's `proxy_read_timeout` is 60s and
+`RAG_REQUEST_TIMEOUT_SECONDS` is 120s. The worst turn measured before this
+fix was 67.9s, which nginx would have cut. The fix makes that far less
+likely but does not align the two numbers.
+
+### 8.4 — Eval harness re-baselined, and the reranker model changed (DONE)
+
+**The harness had silently drifted.** It retrieved `SEARCH_TOP_K = 30` and
+fused at `k = 60` long after production moved to 15 and 30, so every number
+it printed described a pipeline that no longer existed. The constants are now
+**imported** — `rag_helper.SEARCH_TOP_K`, `settings.DAMPING_CONSTANT`,
+`settings.RAG_MIN_RELEVANCE_SCORE` — so the harness follows production by
+construction instead of by memory. That is the fix that matters; the numbers
+below will drift again otherwise.
+
+**Ground truth re-verified** before trusting anything: all 15 distinct
+expected ids still exist in `issues` AND in `rag_documents` with
+`is_active`. A dataset pointing at deleted or unindexed rows would have
+invalidated the whole run silently.
+
+**Two additions:**
+- the confidence gate is now a measured layer, because a case can score
+  perfectly and still be declined in production. Any declined case that the
+  reranker got right is printed as `WOULD LOSE A CORRECT ANSWER`.
+- a rerank failure no longer aborts the run. With a 10s structured timeout a
+  sustained stall exhausts the retries and raises; one bad call used to throw
+  away the other 22 cases. It now falls back to fused order, is counted, and
+  is reported so a degraded run is never read as a good one.
+- `--rerank-model` runs the sweep against a different model without editing
+  settings.
+
+**Current baseline (23 cases, production config):**
+
+| layer | recall@5 | prec@5 | hit@5 | misses |
+|---|---|---|---|---|
+| RRF k=30 | 0.957 | 0.209 | 1.000 | 0 |
+| Reranker | **1.000** | 0.226 | 1.000 | 0 |
+| Answer | **0.978** | **0.949** | **1.000** | 0 |
+
+Gate: **0/23 declined**, top score min 0.98. The 0.35 threshold has enormous
+margin against real questions — which is the evidence that it is safe.
+
+**The reranker now runs `gpt-5-mini`** (`OPENAI_RERANK_MODEL`). Measured, not
+assumed: mini matched `gpt-5` exactly on reranking (recall@5 1.000, 0 misses,
+the same two multi-target rescues) and was marginally better end to end
+(answer hit@5 1.000 against 0.957, one fewer miss).
+
+| | before | after |
+|---|---|---|
+| rerank cost | $0.0058 | **$0.001265** |
+| total cold turn | $0.0092 | **$0.005356** |
+
+A **42% cut** in the cost of a turn.
+
+**Caveat, and why this is a separate setting:** mini returned one unparseable
+response in 23. The reranker already falls back to retrieval order there, and
+the gate treats an unscored result as no evidence rather than bad evidence,
+so it is contained — the run with that failure still scored answer hit@5
+1.000. `OPENAI_CHAT_MODEL` is untouched: the other four stages that use it
+were not measured here.
+
+**Evals do not use Redis, and now do not touch it at all.** Only two stages
+in the eval path cache — `FilterStage` and `MultiQueryStage`. The harness
+builds its own retriever with an uncached embedder and calls the reranker
+directly, so nothing else was ever involved.
+
+`CACHE_ENABLED` (new, in `app/core/config.py`) short-circuits all four
+functions in `app/services/cache.py`, and the runner sets it False unless
+`--cache` is passed. Two reasons, and the second is the important one:
+
+- Running the harness from the host rather than inside Docker cannot resolve
+  the `redis` hostname, so every lookup paid a DNS failure and logged a stack
+  trace. Measured against an unresolvable host, one get plus one set cost
+  **3.70s** with caching on and **0.00s** with it off.
+- **A benchmark that reads a cache is not measuring the code under test.** A
+  filter or expansion cached under an older prompt survives the prompt change
+  and quietly invalidates the comparison. Disabling it also stops eval
+  queries writing into the cache the application shares.
+
+Consequence worth knowing: every run now makes fresh filter and multi-query
+calls, so a run costs more and `search_queries` vary slightly between runs.
+That is the correct trade for a benchmark.
+
+**How to re-run:**
+
+    python -m scripts.rag_eval.runner --answer
+    python -m scripts.rag_eval.runner --answer --rerank-model gpt-5
+    python -m scripts.rag_eval.runner --k 60 30 20 10
+    python -m scripts.rag_eval.runner --cache          # opt back into caching
+
+**Standing note:** the admin password resets to `SEED_ADMIN_PASSWORD`
+(`admin12345`) on a backend restart, so a test script that reset it will fail
+with 401 afterwards.
 
 ---
 

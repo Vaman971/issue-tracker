@@ -24,6 +24,8 @@ import json
 import re
 import statistics
 
+from app.api.helpers import rag_helper
+from app.core.config import settings
 from app.db.session import AsyncSessionLocal
 from app.rag.context.context_builder import ContextBuilder
 from app.rag.filtering.filter_extractor import OpenAIFilterExtractor
@@ -37,6 +39,7 @@ from app.rag.query_pipeline.stages.entity_consolidation import consolidate_entit
 from app.rag.query_pipeline.stages.multi_query import MultiQueryStage
 from app.rag.repositories.rag_document_repository import RagDocumentRepository
 from app.rag.reranking.reranker import OpenAiReranker
+from app.rag.reranking.schemas import RerankResponse, RerankResult
 from app.rag.retrievers.pgvector_retriever import PGVectorRetriever
 from app.rag.retrievers.rrf import fuse
 from app.rag.retrievers.schemas import SearchResult
@@ -50,11 +53,19 @@ from scripts.rag_eval.metrics import (
     recall_at_k,
 )
 
-SEARCH_TOP_K = 30
-RERANK_TOP_K = 10
-EVAL_K = 5
+# Imported, not restated. These drifted once already — the harness was
+# retrieving 30 candidates and fusing at k=60 long after production moved to
+# 15 and 30 — which meant every number it printed described a pipeline that
+# no longer existed. Importing them makes the harness follow production by
+# construction.
+SEARCH_TOP_K = rag_helper.SEARCH_TOP_K
+RERANK_TOP_K = rag_helper.RERANK_TOP_K
+EVAL_K = rag_helper.CONTEXT_TOP_K
 
-PRODUCTION_RRF_K = 60
+PRODUCTION_RRF_K = settings.DAMPING_CONSTANT
+
+# what ConfidenceGateStage would do with each case
+MIN_RELEVANCE = settings.RAG_MIN_RELEVANCE_SCORE
 
 SOURCE_PATTERN = re.compile(r"issue:(\d+)")
 
@@ -250,11 +261,24 @@ async def evaluate_case(
     # the reranker always sees the production fusion
     baseline = fused_by_k.get(PRODUCTION_RRF_K) or fused_by_k[rrf_ks[0]]
 
-    reranked = await reranker.rerank(
-        query=case.query,
-        results=baseline,
-        top_k=RERANK_TOP_K,
-    )
+    # A rerank call can fail outright — the structured timeout is 10s with
+    # two retries, so a sustained API stall exhausts it. One bad call must
+    # not throw away the other 22 cases, so it is recorded and the case
+    # carries on with the fused order the reranker would have refined.
+    try:
+        reranked = await reranker.rerank(
+            query=case.query,
+            results=baseline,
+            top_k=RERANK_TOP_K,
+        )
+        rerank_error = None
+
+    except Exception as exc:
+        rerank_error = type(exc).__name__
+        reranked = RerankResponse(
+            results=[RerankResult(result=r, score=r.score) for r in baseline],
+            model_scored=False,
+        )
 
     consolidated = consolidate_entities(
         [item.result for item in reranked.results],
@@ -265,6 +289,23 @@ async def evaluate_case(
 
     row["rerank_top5"] = rerank_entities
     row["rerank"] = score(rerank_entities, expected)
+    row["rerank_error"] = rerank_error
+
+    # The gate now sits between reranking and the answer, so a case can score
+    # perfectly and still be declined in production. Measured here so that
+    # never goes unnoticed.
+    top_score = (
+        reranked.results[0].score
+        if reranked.results and reranked.model_scored
+        else None
+    )
+
+    row["gate"] = {
+        "top_score": round(top_score, 3) if top_score is not None else None,
+        # None means the reranker judged nothing, which the gate treats as
+        # no evidence rather than bad evidence
+        "declined": top_score is not None and top_score < MIN_RELEVANCE,
+    }
 
     if answer_layer is not None:
 
@@ -319,6 +360,45 @@ def summarise(rows: list[dict], rrf_ks: list[int], answer_layer: bool) -> None:
             f"{misses:>7}"
         )
 
+    failed = [r for r in rows if r.get("rerank_error")]
+
+    if failed:
+        print()
+        print(f"RERANK FAILURES: {len(failed)}/{len(rows)} "
+              f"— these cases fell back to fused order, so the reranker row understates it")
+        for row in failed:
+            print(f"  {row['id']:<26} {row['rerank_error']}")
+
+    # ── confidence gate ──
+    declined = [r for r in rows if r.get("gate", {}).get("declined")]
+    unjudged = [r for r in rows if r.get("gate", {}).get("top_score") is None]
+
+    scores = [
+        r["gate"]["top_score"]
+        for r in rows
+        if r.get("gate", {}).get("top_score") is not None
+    ]
+
+    print()
+    print(f"confidence gate (threshold {MIN_RELEVANCE}):")
+
+    if scores:
+        print(
+            f"  top score  min={min(scores):.2f}  "
+            f"median={statistics.median(scores):.2f}  max={max(scores):.2f}"
+        )
+
+    print(f"  declined   {len(declined)}/{len(rows)}")
+
+    # A declined case that the reranker actually got right is the failure
+    # that matters: the answer was there and the gate threw it away.
+    for row in declined:
+        verdict = "WOULD LOSE A CORRECT ANSWER" if row["rerank"]["hit@5"] else "no hit anyway"
+        print(f"    {row['id']:<26} score={row['gate']['top_score']}  {verdict}")
+
+    if unjudged:
+        print(f"  unjudged   {len(unjudged)} (reranker output unparsed; gate stays out of the way)")
+
     print()
     print("cases where the reranker changed the outcome:")
 
@@ -344,7 +424,26 @@ async def main() -> None:
     parser.add_argument("--answer", action="store_true")
     parser.add_argument("--json", dest="json_path", default=None)
     parser.add_argument("--limit", type=int, default=None)
+    # Rerank is roughly 60% of a turn's cost, so "is a cheaper model good
+    # enough?" is the question worth being able to answer here rather than
+    # by editing settings and restarting.
+    parser.add_argument("--rerank-model", dest="rerank_model", default=None)
+    # Caching is OFF for evaluation. A benchmark that reads a cache measures
+    # whatever wrote the entries, not the code under test — a filter or
+    # expansion cached under an older prompt survives the prompt change and
+    # quietly invalidates the comparison. It also stops eval queries writing
+    # into the cache the application shares.
+    parser.add_argument(
+        "--cache",
+        action="store_true",
+        help="read and write the pipeline caches (off by default)",
+    )
     args = parser.parse_args()
+
+    settings.CACHE_ENABLED = args.cache
+
+    if not args.cache:
+        print("caches disabled: every stage runs fresh, and Redis is not touched")
 
     cases = EVAL_CASES[: args.limit] if args.limit else EVAL_CASES
 
@@ -357,6 +456,10 @@ async def main() -> None:
         expander=OpenAIQueryExpander(prompt_loader=prompt_loader),
     )
     reranker = OpenAiReranker(prompt_loader=prompt_loader)
+
+    if args.rerank_model:
+        reranker._model = args.rerank_model
+        print(f"reranking with {args.rerank_model} (default {settings.OPENAI_CHAT_MODEL})")
 
     answer_layer = (
         (ContextBuilder(), prompt_loader, OpenAILLM())

@@ -11,6 +11,14 @@ class Settings(BaseSettings):
     DATABASE_URL: str = ""
     REDIS_URL: str = "redis://localhost:6379/0"
 
+    # Turns every cache read and write into a no-op. Off for evaluation runs:
+    # a benchmark that reads a cache is not measuring the current code, it is
+    # measuring whatever produced the entries — a stale filter or expansion
+    # written by a previous prompt survives a prompt change and quietly
+    # invalidates the comparison. Also spares a run outside Docker from
+    # failing to resolve the `redis` hostname on every lookup.
+    CACHE_ENABLED: bool = True
+
     JWT_SECRET_KEY: str = ""
     JWT_REFRESH_SECRET_KEY: str = ""
     JWT_ALGORITHM: str = "HS256"
@@ -78,6 +86,21 @@ class Settings(BaseSettings):
     OPENAI_EMBEDDING_CONCURRENCY: int = 10
     OPENAI_CHAT_MODEL: str = "gpt-5"
     OPENAI_ANSWER_MODEL: str = "gpt-5-mini"
+
+    # Reranking has its own model because it is the single most expensive
+    # stage — roughly 60% of a turn — and the eval harness showed the cheaper
+    # model does the job. Across 23 ground-truth cases gpt-5-mini matched
+    # gpt-5 exactly on reranking (recall@5 1.000, 0 misses, same two
+    # multi-target rescues) and was marginally better end to end (answer
+    # hit@5 1.000 against 0.957). It is a fifth of the price.
+    #
+    # Caveat: mini returned one unparseable response in 23. The reranker
+    # already falls back to retrieval order there, and the confidence gate
+    # treats an unscored result as no evidence rather than bad evidence, so
+    # the failure is contained — but it is why this is a separate setting and
+    # not a change to OPENAI_CHAT_MODEL, which the other four stages use and
+    # which was not measured here.
+    OPENAI_RERANK_MODEL: str = "gpt-5-mini"
     OPENAI_REASONING_EFFORT: str = "minimal"
     DAMPING_CONSTANT: int = 30
 
@@ -107,6 +130,19 @@ class Settings(BaseSettings):
     # which is the intended strict behaviour.
     OPENAI_TIMEOUT_SECONDS: int = 30
     OPENAI_MAX_RETRIES: int = 2
+
+    # A tighter per-attempt budget for the calls that return a short JSON
+    # payload — routing, rewriting, filtering, multi-query and reranking.
+    #
+    # Measured on the reranker: with identical input and identical output
+    # (323 tokens) latency ranged 3.5s to 60s, and with retries disabled an
+    # attempt timed out at exactly 30.04s. The tail is the API stalling, not
+    # the prompt. At 30s a stall costs 30s before the retry even starts; at
+    # 10s it costs 10s, and the retry usually lands in about 4s.
+    #
+    # The answer model keeps the 30s budget above: it streams, so its time is
+    # spent producing tokens the user is already reading.
+    OPENAI_STRUCTURED_TIMEOUT_SECONDS: int = 10
 
     # How long to wait for a database connection to be established. Deliberately
     # not a query timeout: ingestion runs long statements through this engine.

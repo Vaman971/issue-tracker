@@ -32,7 +32,9 @@ class OpenAIQueryRouter(BaseQueryRouter):
         prompt_loader: PromptTemplateLoader,
     ) -> None:
 
-        self.client = build_openai_client()
+        self.client = build_openai_client(
+            timeout=settings.OPENAI_STRUCTURED_TIMEOUT_SECONDS,
+        )
 
         self.prompt_loader = prompt_loader
 
