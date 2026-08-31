@@ -11,6 +11,7 @@ from functools import lru_cache
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.config import settings
 from app.db.session import AsyncSessionLocal
 from app.models.user import User, UserRole
 from app.rag.context.context_builder import ContextBuilder
@@ -24,6 +25,7 @@ from app.rag.memory.postgres_memory import PostgresMemory
 from app.rag.multi_query.openai_multi_query import OpenAIQueryExpander
 from app.rag.prompts.loader import PromptTemplateLoader
 from app.rag.query_pipeline.pipeline import QueryPipeline
+from app.rag.query_pipeline.stages.confidence_gate import ConfidenceGateStage
 from app.rag.query_pipeline.stages.entity_consolidation import EntityConsolidationStage
 from app.rag.query_pipeline.stages.filter import FilterStage
 from app.rag.query_pipeline.stages.multi_query import MultiQueryStage
@@ -84,6 +86,10 @@ def _shared_components() -> tuple[QueryPipeline, ContextBuilder, PromptTemplateL
             ),
             EntityConsolidationStage(
                 top_k=CONTEXT_TOP_K,
+            ),
+            # last: judges exactly the set the answer model would receive
+            ConfidenceGateStage(
+                minimum_score=settings.RAG_MIN_RELEVANCE_SCORE,
             ),
         ],
     )

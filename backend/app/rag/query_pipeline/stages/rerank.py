@@ -103,6 +103,7 @@ class RerankStage(BaseQueryStage):
             reranked = RerankResponse(
                 results=self._rebuild_results(cached.get("results", [])),
                 model=cached.get("model", ""),
+                model_scored=cached.get("model_scored", True),
                 input_tokens=cached.get("input_tokens", 0),
                 output_tokens=cached.get("output_tokens", 0),
                 reasoning_tokens=cached.get("reasoning_tokens", 0),
@@ -135,6 +136,20 @@ class RerankStage(BaseQueryStage):
         trace.rerank.final_count = len(reranked.results)
         trace.rerank.model = reranked.model
         trace.rerank.duration_ms = timer.elapsed_ms()
+
+        # The score is dropped when RerankResult is unwrapped below, so the
+        # best one is published here — it is the only measure of how relevant
+        # the retrieved set actually is, and the confidence gate reads it.
+        # None when the model judged nothing, so the gate cannot mistake a
+        # retrieval score for a relevance score.
+        processed.top_relevance = (
+            reranked.results[0].score
+            if reranked.results and reranked.model_scored
+            else None
+        )
+
+        trace.rerank.model_scored = reranked.model_scored
+        trace.rerank.top_score = processed.top_relevance or 0.0
 
         processed.results = [
             item.result

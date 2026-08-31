@@ -83,6 +83,9 @@ class OpenAiReranker(BaseReranker):
 
             return RerankResponse(
                 results = default[:top_k],
+                # scores here are the retrieval scores these candidates
+                # arrived with; the model judged nothing
+                model_scored=False,
                 model=usage.model,
                 input_tokens=usage.input_tokens,
                 output_tokens=usage.output_tokens,
