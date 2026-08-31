@@ -16,7 +16,9 @@ class OpenAIQueryRewriter(BaseQueryRewriter):
         self,
         prompt_loader: PromptTemplateLoader,
     ):
-        self.client = build_openai_client()
+        self.client = build_openai_client(
+            timeout=settings.OPENAI_STRUCTURED_TIMEOUT_SECONDS,
+        )
         self.model = settings.OPENAI_CHAT_MODEL
         self.loader = prompt_loader
 

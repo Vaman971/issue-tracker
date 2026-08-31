@@ -23,11 +23,17 @@ from openai import AsyncOpenAI
 from app.core.config import settings
 
 
-def build_openai_client() -> AsyncOpenAI:
-    """An AsyncOpenAI client carrying the shared timeout and retry policy."""
+def build_openai_client(timeout: float | None = None) -> AsyncOpenAI:
+    """An AsyncOpenAI client carrying the shared timeout and retry policy.
+
+    `timeout` overrides the per-attempt budget for callers whose work has a
+    different shape. A stalled request runs to that budget before the retry
+    begins, so a call that normally finishes in four seconds should not be
+    given thirty — see `OPENAI_STRUCTURED_TIMEOUT_SECONDS`.
+    """
 
     return AsyncOpenAI(
         api_key=settings.OPENAI_API_KEY,
-        timeout=settings.OPENAI_TIMEOUT_SECONDS,
+        timeout=timeout if timeout is not None else settings.OPENAI_TIMEOUT_SECONDS,
         max_retries=settings.OPENAI_MAX_RETRIES,
     )

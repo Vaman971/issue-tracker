@@ -9,6 +9,9 @@ logger = logging.getLogger(__name__)
 
 
 async def cache_get_json(key: str) -> Any | None:
+    if not settings.CACHE_ENABLED:
+        return None
+
     try:
         value = await get_redis_client().get(key)
     except Exception:
@@ -26,6 +29,9 @@ async def cache_set_json(
     value: Any,
     ttl_seconds: int = settings.REDIS_DEFAULT_TTL_SECONDS,
 ) -> None:
+    if not settings.CACHE_ENABLED:
+        return
+
     try:
         await get_redis_client().set(
             key,
@@ -37,6 +43,9 @@ async def cache_set_json(
 
 
 async def cache_delete(key: str) -> None:
+    if not settings.CACHE_ENABLED:
+        return
+
     try:
         await get_redis_client().delete(key)
     except Exception:
@@ -44,6 +53,9 @@ async def cache_delete(key: str) -> None:
 
 
 async def cache_delete_pattern(pattern: str) -> None:
+    if not settings.CACHE_ENABLED:
+        return
+
     client = get_redis_client()
 
     try:
