@@ -451,23 +451,104 @@ sits below the notification drawer (z-index 1000/1001) rather than fighting it.
     gap: 5px;
 }
 
+/* The row is the container now, not the button: a rename and a delete button
+   sit beside the title, and a button cannot be nested inside another one. */
 .historyItem,
 .historyItemActive {
-    width: 100%;
     display: flex;
-    flex-direction: column;
-    align-items: flex-start;
-    gap: 3px;
-    padding: 10px 12px;
-    font-family: inherit;
-    text-align: left;
+    align-items: center;
+    gap: 6px;
+    padding: 8px 10px;
     background: #ffffff;
     border: 1px solid #e5e7eb;
     border-left-width: 3px;
     border-left-color: transparent;
     border-radius: 10px;
-    cursor: pointer;
     transition: box-shadow 0.15s ease, background 0.15s;
+}
+
+/* the clickable part: everything except the action buttons */
+.historyOpen {
+    flex: 1;
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 3px;
+    padding: 2px 0;
+    font-family: inherit;
+    text-align: left;
+    background: transparent;
+    border: none;
+    cursor: pointer;
+}
+
+.historyOpen:focus-visible {
+    outline: 2px solid #60a5fa;
+    outline-offset: 2px;
+    border-radius: 6px;
+}
+
+/* ── Row actions ── */
+.historyActions {
+    display: flex;
+    gap: 4px;
+    flex-shrink: 0;
+}
+
+.renameBtn,
+.removeBtn {
+    width: 24px;
+    height: 24px;
+    border-radius: 6px;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: background 0.15s, border-color 0.15s;
+}
+
+.renameBtn {
+    background: #f9fafb;
+    border: 1px solid #e5e7eb;
+    color: #6b7280;
+}
+
+.renameBtn:hover {
+    background: #eff6ff;
+    border-color: #bfdbfe;
+    color: #2563eb;
+}
+
+/* same red as the notification drawer's delete */
+.removeBtn {
+    background: #fff5f5;
+    border: 1px solid #fee2e2;
+    color: #dc2626;
+}
+
+.removeBtn:hover {
+    background: #fee2e2;
+    border-color: #fca5a5;
+}
+
+/* ── Inline title edit ── */
+.titleInput {
+    flex: 1;
+    min-width: 0;
+    padding: 5px 8px;
+    font-size: 12.5px;
+    font-weight: 600;
+    font-family: inherit;
+    color: #111827;
+    background: #ffffff;
+    border: 1px solid #2563eb;
+    border-radius: 6px;
+    box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.12);
+}
+
+.titleInput:focus {
+    outline: none;
 }
 
 .historyItem:hover {

@@ -133,6 +133,89 @@ export const ragApi = api.injectEndpoints({
         }),
 
         /**
+         * Retitle a conversation.
+         *
+         * Patched into the cached list before the request resolves, the way
+         * `updateIssue` does it. Without that the row shows the OLD title for
+         * the moment between leaving the edit box and the refetch landing,
+         * which reads as the rename having failed.
+         */
+        renameConversation: builder.mutation({
+            query: ({ conversationId, title }) => ({
+                url: `/rag/conversations/${conversationId}`,
+                method: "PATCH",
+                body: { title },
+            }),
+
+            async onQueryStarted(
+                { conversationId, title, queryArgs = { skip: 0, limit: 20 } },
+                { dispatch, queryFulfilled },
+            ) {
+                const patch = dispatch(
+                    api.util.updateQueryData("getConversations", queryArgs, (draft) => {
+                        const conversation = draft.find((item) => item.id === conversationId);
+                        if (conversation) {
+                            conversation.title = title;
+                        }
+                    }),
+                );
+
+                try {
+                    await queryFulfilled;
+                } catch {
+                    patch.undo();
+                }
+            },
+
+            invalidatesTags: ["Conversation"],
+        }),
+
+        /**
+         * Delete a conversation. Its messages cascade on the server.
+         *
+         * Removed from the cached list immediately for the same reason as
+         * above, and the transcript tag is invalidated so a deleted
+         * conversation's messages are never served from cache.
+         */
+        deleteConversation: builder.mutation({
+            query: (conversationId) => ({
+                url: `/rag/conversations/${conversationId}`,
+                method: "DELETE",
+            }),
+
+            async onQueryStarted(conversationId, { dispatch, queryFulfilled }) {
+                const patch = dispatch(
+                    api.util.updateQueryData(
+                        "getConversations",
+                        { skip: 0, limit: 20 },
+                        (draft) => {
+                            // spliced rather than filtered: the recipe then
+                            // only mutates, instead of relying on Immer's
+                            // return-a-new-value rule
+                            const index = draft.findIndex(
+                                (item) => item.id === conversationId,
+                            );
+                            if (index !== -1) {
+                                draft.splice(index, 1);
+                            }
+                        },
+                    ),
+                );
+
+                try {
+                    await queryFulfilled;
+                } catch {
+                    patch.undo();
+                }
+            },
+
+            invalidatesTags: (_result, _error, conversationId) => [
+                "Conversation",
+                { type: "ConversationMessage", id: conversationId },
+            ],
+        }),
+
+        /**
          * Ask a question and stream the answer.
          *
          * Resolves with the whole answer once the stream closes. Pass
@@ -192,5 +275,7 @@ export const ragApi = api.injectEndpoints({
 export const {
     useGetConversationsQuery,
     useGetConversationMessagesQuery,
+    useRenameConversationMutation,
+    useDeleteConversationMutation,
     useSendChatMessageMutation,
 } = ragApi;
