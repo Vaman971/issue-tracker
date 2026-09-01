@@ -186,6 +186,27 @@ async def save_state(
     await db.commit()
 
 
+async def rename_conversation(
+    conversation: Conversation,
+    title: str,
+    db: AsyncSession,
+) -> Conversation:
+    """Give a conversation a new title.
+
+    `updated_at` is deliberately NOT touched. `list_conversations` orders by
+    it to show the most recently *active* conversation first, and retitling
+    an old conversation is not activity — bumping it would jump it to the top
+    of the history list for no reason the user would recognise.
+    """
+
+    conversation.title = title[:TITLE_MAX_LENGTH]
+
+    await db.commit()
+    await db.refresh(conversation)
+
+    return conversation
+
+
 async def delete_conversation(
     conversation: Conversation,
     db: AsyncSession,

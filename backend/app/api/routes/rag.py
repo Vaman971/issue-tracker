@@ -5,16 +5,18 @@ import uuid
 from collections.abc import AsyncIterator, Awaitable
 from typing import TypeVar
 
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query, status
 from fastapi.responses import StreamingResponse
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.rbac import require_rag_access
 from app.api.helpers.conversation_helper import (
     create_conversation,
+    delete_conversation,
     get_conversation_or_404,
     list_conversations,
     list_messages,
+    rename_conversation,
 )
 from app.api.helpers.rag_helper import build_access_scope, build_rag_service
 from app.core.config import settings
@@ -32,6 +34,7 @@ from app.rag.filtering.schemas import AccessScope
 from app.schemas.rag import (
     ConversationMessageRead,
     ConversationRead,
+    ConversationUpdate,
     RagChatRequest,
 )
 from app.services.rate_limit import build_rate_limit_key, enforce_rate_limit
@@ -91,6 +94,25 @@ async def _enforce_chat_rate_limit(user: User) -> None:
         window_seconds=settings.RAG_RATE_LIMIT_WINDOW_SECONDS,
         detail="Too many questions. Please wait a moment before asking another.",
     )
+
+
+def _clean_title(title: str) -> str:
+    """Reject a title that is blank once trimmed.
+
+    Same reasoning as `_clean_question`: the schema has no `min_length`, so
+    "" and "   " both arrive here and both get the same readable 400 rather
+    than one pydantic validation blob.
+    """
+
+    cleaned = title.strip()
+
+    if not cleaned:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Conversation title cannot be empty.",
+        )
+
+    return cleaned
 
 
 def _clean_question(question: str) -> str:
@@ -297,6 +319,65 @@ async def get_conversation_messages(
     return await _guarded(
         list_messages(
             conversation_id=conversation.id,
+            db=db,
+        )
+    )
+
+
+@router.patch(
+    "/conversations/{conversation_id}",
+    response_model=ConversationRead,
+    status_code=status.HTTP_200_OK,
+)
+async def update_conversation(
+    conversation_id: uuid.UUID,
+    payload: ConversationUpdate,
+    current_user: User = Depends(require_rag_access),
+    db: AsyncSession = Depends(get_db),
+):
+    """Retitle a conversation the user owns."""
+
+    title = _clean_title(payload.title)
+
+    conversation = await _guarded(
+        get_conversation_or_404(
+            conversation_id=conversation_id,
+            user=current_user,
+            db=db,
+        )
+    )
+
+    return await _guarded(
+        rename_conversation(
+            conversation=conversation,
+            title=title,
+            db=db,
+        )
+    )
+
+
+@router.delete(
+    "/conversations/{conversation_id}",
+    status_code=status.HTTP_204_NO_CONTENT,
+)
+async def remove_conversation(
+    conversation_id: uuid.UUID,
+    current_user: User = Depends(require_rag_access),
+    db: AsyncSession = Depends(get_db),
+):
+    """Delete a conversation the user owns; its messages cascade."""
+
+    conversation = await _guarded(
+        get_conversation_or_404(
+            conversation_id=conversation_id,
+            user=current_user,
+            db=db,
+        )
+    )
+
+    await _guarded(
+        delete_conversation(
+            conversation=conversation,
             db=db,
         )
     )

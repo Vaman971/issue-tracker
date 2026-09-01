@@ -4,8 +4,10 @@ import { useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 
 import {
+    useDeleteConversationMutation,
     useGetConversationMessagesQuery,
     useGetConversationsQuery,
+    useRenameConversationMutation,
     useSendChatMessageMutation,
 } from "@/store/features/rag/ragApi";
 import styles from "./page.module.css";
@@ -80,10 +82,18 @@ export default function RagChatWidget() {
     const [streamingText, setStreamingText] = useState("");
     const [error, setError] = useState(null);
 
+    // the conversation whose title is being edited in place, and the text in
+    // that input. null means no row is in edit mode.
+    const [editingId, setEditingId] = useState(null);
+    const [titleDraft, setTitleDraft] = useState("");
+
     const [sendChatMessage, { isLoading }] = useSendChatMessageMutation();
+    const [renameConversation] = useRenameConversationMutation();
+    const [deleteConversation] = useDeleteConversationMutation();
 
     const listRef = useRef(null);
     const inputRef = useRef(null);
+    const titleInputRef = useRef(null);
 
     // keys for messages that exist only locally, until the saved
     // transcript replaces them with rows that carry real ids
@@ -174,12 +184,30 @@ export default function RagChatWidget() {
         if (!isOpen) return;
 
         const onKey = (event) => {
-            if (event.key === "Escape") setIsOpen(false);
+            if (event.key !== "Escape") return;
+
+            // innermost first: Escape abandons a rename before it closes the
+            // panel. Clearing editingId unmounts the input, and React fires no
+            // blur on unmount, so the edit is discarded rather than saved.
+            if (editingId) {
+                setEditingId(null);
+                return;
+            }
+
+            setIsOpen(false);
         };
 
         document.addEventListener("keydown", onKey);
         return () => document.removeEventListener("keydown", onKey);
-    }, [isOpen]);
+    }, [isOpen, editingId]);
+
+    // select the existing title so typing replaces it
+    useEffect(() => {
+        if (editingId) {
+            titleInputRef.current?.focus();
+            titleInputRef.current?.select();
+        }
+    }, [editingId]);
 
     // ── Actions ──
     const startNewConversation = () => {
@@ -198,6 +226,55 @@ export default function RagChatWidget() {
         setError(null);
         setActiveConversationId(conversationId);
         setView("chat");
+    };
+
+    const startEditing = (conversation) => {
+        setEditingId(conversation.id);
+        setTitleDraft(conversation.title || "");
+    };
+
+    /**
+     * Save the edited title.
+     *
+     * Called from onBlur, which covers both ways of finishing. Enter blurs the
+     * input rather than saving directly, so the save happens in exactly one
+     * place and cannot run twice.
+     */
+    const commitTitle = async () => {
+        const conversationId = editingId;
+
+        if (!conversationId) return;
+
+        const title = titleDraft.trim();
+        const current = conversations.find(
+            (item) => item.id === conversationId,
+        )?.title ?? "";
+
+        setEditingId(null);
+
+        // nothing worth a request: unchanged, or emptied — and the backend
+        // rejects a blank title anyway
+        if (!title || title === current) return;
+
+        await renameConversation({ conversationId, title });
+    };
+
+    const handleTitleKeyDown = (event) => {
+        if (event.key === "Enter") {
+            event.preventDefault();
+            event.currentTarget.blur();
+        }
+    };
+
+    const handleDeleteConversation = async (conversationId) => {
+        await deleteConversation(conversationId);
+
+        // the conversation on screen just went away; start fresh rather than
+        // leaving the widget pointing at a row that no longer exists
+        if (conversationId === activeConversationId) {
+            setActiveConversationId(null);
+            setMessages([]);
+        }
     };
 
     const handleSubmit = async (event) => {
@@ -350,26 +427,77 @@ export default function RagChatWidget() {
 
                             {conversations.length > 0 && (
                                 <ul className={styles.historyList}>
-                                    {conversations.map((conversation) => (
-                                        <li key={conversation.id}>
-                                            <button
-                                                type="button"
+                                    {conversations.map((conversation) => {
+                                        const isEditing = editingId === conversation.id;
+
+                                        return (
+                                            <li
+                                                key={conversation.id}
                                                 className={
                                                     conversation.id === activeConversationId
                                                         ? styles.historyItemActive
                                                         : styles.historyItem
                                                 }
-                                                onClick={() => openConversation(conversation.id)}
                                             >
-                                                <span className={styles.historyTitle}>
-                                                    {conversation.title || "Untitled conversation"}
-                                                </span>
-                                                <span className={styles.historyTime}>
-                                                    {timeAgo(conversation.updated_at || conversation.created_at)}
-                                                </span>
-                                            </button>
-                                        </li>
-                                    ))}
+                                                {isEditing ? (
+                                                    <input
+                                                        ref={titleInputRef}
+                                                        className={styles.titleInput}
+                                                        value={titleDraft}
+                                                        onChange={(event) => setTitleDraft(event.target.value)}
+                                                        onKeyDown={handleTitleKeyDown}
+                                                        onBlur={commitTitle}
+                                                        maxLength={255}
+                                                        aria-label="Conversation title"
+                                                    />
+                                                ) : (
+                                                    <button
+                                                        type="button"
+                                                        className={styles.historyOpen}
+                                                        onClick={() => openConversation(conversation.id)}
+                                                    >
+                                                        <span className={styles.historyTitle}>
+                                                            {conversation.title || "Untitled conversation"}
+                                                        </span>
+                                                        <span className={styles.historyTime}>
+                                                            {timeAgo(conversation.updated_at || conversation.created_at)}
+                                                        </span>
+                                                    </button>
+                                                )}
+
+                                                {!isEditing && (
+                                                    <div className={styles.historyActions}>
+                                                        <button
+                                                            type="button"
+                                                            className={styles.renameBtn}
+                                                            title="Rename"
+                                                            aria-label="Rename conversation"
+                                                            onClick={() => startEditing(conversation)}
+                                                        >
+                                                            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
+                                                                <path d="M12 20h9" />
+                                                                <path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4Z" />
+                                                            </svg>
+                                                        </button>
+
+                                                        <button
+                                                            type="button"
+                                                            className={styles.removeBtn}
+                                                            title="Delete"
+                                                            aria-label="Delete conversation"
+                                                            onClick={() => handleDeleteConversation(conversation.id)}
+                                                        >
+                                                            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
+                                                                <path d="M3 6h18" />
+                                                                <path d="M8 6V4h8v2" />
+                                                                <path d="M19 6l-1 14H6L5 6" />
+                                                            </svg>
+                                                        </button>
+                                                    </div>
+                                                )}
+                                            </li>
+                                        );
+                                    })}
                                 </ul>
                             )}
                         </div>

@@ -19,6 +19,16 @@ class RagChatRequest(BaseModel):
     conversation_id: uuid.UUID | None = None
 
 
+class ConversationUpdate(BaseModel):
+    """A new title for an existing conversation."""
+
+    # 255 matches TITLE_MAX_LENGTH in conversation_helper, which is what the
+    # column holds. No min_length: the route trims and rejects blanks itself,
+    # so "" and "   " get the same clean 400 rather than one pydantic blob and
+    # one readable message — the same reasoning as RagChatRequest.question.
+    title: str = Field(max_length=255)
+
+
 class ConversationRead(BaseModel):
     id: uuid.UUID
     title: str | None
